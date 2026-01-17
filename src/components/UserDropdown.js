@@ -182,7 +182,7 @@ export class UserDropdown {
     ` : '';
 
     return `
-      <div class="hr-select ui-select" data-component-id="${this.id}">
+      <div class="hr-select ui-select" data-component-id="${this.id}" style="position: relative;">
         <div class="${selectionClasses}" style="${this._getSelectionStyles()}">
           <div class="hr-base-selection-tags" tabindex="0">
             ${tagHtml}
