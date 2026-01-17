@@ -125,6 +125,23 @@ export class UserDropdown {
           z-index: 999999;
           margin-top: 4px;
         }
+        .ud-menu-portal .hr-base-select-menu {
+          background: #fff !important;
+          border-radius: 3px;
+          box-shadow: 0 3px 6px -4px rgba(0, 0, 0, .12), 0 6px 16px 0 rgba(0, 0, 0, .08), 0 9px 28px 8px rgba(0, 0, 0, .05);
+          max-height: 280px;
+          overflow-y: auto;
+        }
+        .ud-menu-portal .hr-base-select-option {
+          background: #fff;
+          cursor: pointer;
+        }
+        .ud-menu-portal .hr-base-select-option:hover {
+          background: rgb(243, 243, 245) !important;
+        }
+        .ud-menu-portal .hr-base-select-option--pending {
+          background: rgb(243, 243, 245) !important;
+        }
       </style>
     `;
   }
