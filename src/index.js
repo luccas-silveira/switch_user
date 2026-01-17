@@ -1,107 +1,79 @@
 /**
  * UI Injector - Entry Point Principal
  *
- * Ponto de entrada do sistema de injeção de UI.
- * Este arquivo deve ser importado ou carregado como script loader.
- *
- * @example
- * // Uso via import (bundler)
- * import UIInjector from './src/index.js';
- * const app = await UIInjector.init({ debug: true });
- *
- * @example
- * // Uso via script tag (IIFE build)
- * <script src="dist/ui-injector.min.js"></script>
- * <script>
- *   UIInjector.init({ debug: true }).then(app => {
- *     console.log('App iniciado!', app);
- *   });
- * </script>
+ * Auto-inicializa o dropdown de usuários no GoHighLevel
  */
 
-// Core
-import { init, destroy, isInitialized } from './core/index.js';
+import { UserDropdown } from './components/index.js';
+import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
+import { init } from './core/index.js';
+import { logger } from './utils/index.js';
 
-// Configuração
-import { getConfig, setConfig, resetConfig } from './config/index.js';
+const ALLOWED_LOCATION_ID = 'citQs4acsN1StzOEDuvj';
 
-// Componentes
-import { Component, RedSquare, UserDropdown } from './components/index.js';
+let dropdownInstance = null;
 
-// Utilitários
-import {
-  waitForElement,
-  waitForDOMReady,
-  createElement,
-  generateId,
-  observeDOM,
-  logger,
-  eventBus,
-} from './utils/index.js';
+async function startApp() {
+  try {
+    logger.info('Iniciando Switch User...');
 
-// Estilos
-import { styleManager } from './styles/index.js';
+    // Verifica location
+    const locationId = getLocationIdFromUrl();
+    if (locationId !== ALLOWED_LOCATION_ID) {
+      logger.debug('Location não permitida: ' + locationId);
+      return;
+    }
 
-/**
- * API pública do UI Injector
- */
-const UIInjector = {
-  // Versão
-  version: '1.0.0',
+    // Inicializa core
+    await init({ debug: true, namespace: 'ui-injector' });
 
-  // Ciclo de vida
-  init,
-  destroy,
-  isInitialized,
+    // Busca usuários
+    logger.debug('Buscando usuários da API...');
+    const users = await fetchUsersByLocation(ALLOWED_LOCATION_ID);
+    logger.info(users.length + ' usuários carregados');
 
-  // Configuração
-  getConfig,
-  setConfig,
-  resetConfig,
+    // Aguarda elemento
+    let el = document.querySelector('#OpportunityOwner');
+    let tries = 0;
+    while (!el && tries < 50) {
+      await new Promise(r => setTimeout(r, 200));
+      el = document.querySelector('#OpportunityOwner');
+      tries++;
+    }
 
-  // Componentes
-  Component,
-  RedSquare,
-  UserDropdown,
+    if (!el) {
+      logger.error('Elemento #OpportunityOwner não encontrado');
+      return;
+    }
 
-  // Utilitários
-  utils: {
-    waitForElement,
-    waitForDOMReady,
-    createElement,
-    generateId,
-    observeDOM,
-  },
+    // Remove dropdowns anteriores
+    document.querySelectorAll('[data-component-id^="user-dropdown"]').forEach(e => e.remove());
+    el.style.display = '';
 
-  // Logging
-  logger,
+    // Cria dropdown
+    dropdownInstance = new UserDropdown({
+      users: users,
+      targetSelector: '#OpportunityOwner',
+      allowedLocationId: ALLOWED_LOCATION_ID,
+    });
 
-  // Eventos
-  eventBus,
+    dropdownInstance.on('user:selected', (user) => {
+      logger.info('Selecionado: ' + user.name);
+    });
 
-  // Estilos
-  styleManager,
-};
+    await dropdownInstance.mountReplacing();
+    logger.info('Dropdown montado com ' + users.length + ' usuários');
 
-// Expõe globalmente para uso sem bundler (opcional)
-if (typeof window !== 'undefined') {
-  window.UIInjector = UIInjector;
+  } catch (err) {
+    logger.error('Erro: ' + err.message);
+    console.error(err);
+  }
 }
 
-export default UIInjector;
+// Auto-inicia
+if (typeof window !== 'undefined') {
+  window.UIInjector = { start: startApp, getDropdown: () => dropdownInstance };
+  setTimeout(startApp, 1000);
+}
 
-// Named exports para tree-shaking
-export {
-  init,
-  destroy,
-  isInitialized,
-  getConfig,
-  setConfig,
-  resetConfig,
-  Component,
-  RedSquare,
-  UserDropdown,
-  logger,
-  eventBus,
-  styleManager,
-};
+export default { start: startApp };
