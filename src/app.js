@@ -120,6 +120,9 @@ export async function startApp() {
   }
 }
 
+export const start = startApp;
+export const init = startApp;
+
 async function runReinject() {
   reinjectInProgress = true;
   try {

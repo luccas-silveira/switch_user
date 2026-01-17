@@ -168,6 +168,8 @@ if (typeof window !== 'undefined') {
   scheduleInitialInjection();
 }
 
+export { startApp as start, startApp as init, getDropdown };
+
 export default {
   start: startApp,
   init: startApp,
