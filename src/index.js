@@ -21,6 +21,30 @@ let reinjectQueued = false;
 let initialTimerId = null;
 let routeWatcherStarted = false;
 
+// Cache de usuários e prefetch imediato
+let usersCache = null;
+let usersFetchPromise = null;
+
+// Inicia prefetch imediatamente se estiver na location correta
+function startUsersPrefetch() {
+  const locationId = getLocationIdFromUrl();
+  if (locationId === ALLOWED_LOCATION_ID && !usersFetchPromise) {
+    logger.debug('Prefetch de usuários iniciado...');
+    usersFetchPromise = fetchUsersByLocation(ALLOWED_LOCATION_ID)
+      .then(users => {
+        usersCache = users;
+        logger.info(users.length + ' usuários pré-carregados');
+        return users;
+      })
+      .catch(err => {
+        logger.error('Erro no prefetch: ' + err.message);
+        usersFetchPromise = null;
+        return [];
+      });
+  }
+  return usersFetchPromise;
+}
+
 function hasInjectedDropdown() {
   return Boolean(document.querySelector(DROPDOWN_SELECTOR));
 }
@@ -37,9 +61,6 @@ function getDropdown() {
   return dropdownInstance;
 }
 
-// Cache de usuários para evitar chamadas repetidas
-let usersCache = null;
-
 async function startApp() {
   try {
     logger.info('Iniciando Switch User...');
@@ -54,16 +75,10 @@ async function startApp() {
     // Inicializa core (não bloqueia)
     init({ debug: true, namespace: 'ui-injector' });
 
-    // Busca usuários e aguarda elemento EM PARALELO
+    // Usa cache ou prefetch já em andamento
     const usersPromise = usersCache
       ? Promise.resolve(usersCache)
-      : (async () => {
-          logger.debug('Buscando usuários da API...');
-          const users = await fetchUsersByLocation(ALLOWED_LOCATION_ID);
-          usersCache = users;
-          logger.info(users.length + ' usuários carregados');
-          return users;
-        })();
+      : usersFetchPromise || startUsersPrefetch();
 
     const elementPromise = (async () => {
       let el = document.querySelector(TARGET_SELECTOR);
@@ -195,6 +210,10 @@ if (typeof window !== 'undefined') {
     init: startApp,
     getDropdown,
   };
+
+  // Inicia prefetch de usuários IMEDIATAMENTE
+  startUsersPrefetch();
+
   startRouteWatcher();
   scheduleInitialInjection();
 }
