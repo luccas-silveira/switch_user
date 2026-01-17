@@ -3,7 +3,7 @@
  *
  * Substitui o dropdown OpportunityOwner por um dropdown customizado
  * que exibe a lista de usuários obtida via API.
- * Exibe apenas quando a URL contém o locationId permitido.
+ * Usa as classes CSS nativas do GHL para manter consistência visual.
  */
 
 import { waitForElement } from '../utils/dom.js';
@@ -19,6 +19,7 @@ export class UserDropdown {
     this.allowedLocationId = props.allowedLocationId || ALLOWED_LOCATION_ID;
     this.originalElement = null;
     this.element = null;
+    this.menuElement = null;
     this._mounted = false;
 
     // Estado do dropdown
@@ -72,177 +73,7 @@ export class UserDropdown {
   }
 
   /**
-   * CSS do componente - estilo GHL
-   */
-  _getStyles() {
-    return `
-      <style>
-        .ud-container {
-          position: relative;
-          display: inline-block;
-          width: 100%;
-          font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          font-size: 15px;
-        }
-
-        .ud-trigger {
-          display: flex;
-          align-items: center;
-          padding: 3px 26px 3px 12px;
-          background: rgba(255, 255, 255, 1);
-          border: 1px solid rgb(224, 224, 230);
-          border-radius: 3px;
-          cursor: pointer;
-          min-height: 40px;
-          transition: all 0.2s cubic-bezier(.4, 0, .2, 1);
-          width: 100%;
-          box-sizing: border-box;
-          position: relative;
-        }
-
-        .ud-trigger:hover {
-          border-color: #004EEB;
-        }
-
-        .ud-trigger.open {
-          border-color: #155EEF;
-          box-shadow: 0 0 0 2px rgba(21, 94, 239, 0.2);
-        }
-
-        .ud-tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 4px;
-          flex: 1;
-          align-items: center;
-        }
-
-        .ud-tag {
-          display: inline-flex;
-          align-items: center;
-          padding: 0 7px;
-          height: 28px;
-          background: rgb(250, 250, 252);
-          border: 1px solid rgb(224, 224, 230);
-          border-radius: 2px;
-          font-size: 14px;
-          color: rgba(52, 64, 84, 1);
-          font-weight: 400;
-          position: relative;
-        }
-
-        .ud-tag-text {
-          max-width: 150px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .ud-tag-close {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-left: 4px;
-          width: 18px;
-          height: 18px;
-          cursor: pointer;
-          color: rgba(102, 102, 102, 1);
-          border-radius: 2px;
-          transition: background-color 0.15s;
-        }
-
-        .ud-tag-close:hover {
-          background-color: rgba(0, 0, 0, 0.09);
-        }
-
-        .ud-tag-close:active {
-          background-color: rgba(0, 0, 0, 0.13);
-        }
-
-        .ud-tag-close svg {
-          width: 14px;
-          height: 14px;
-        }
-
-        .ud-placeholder {
-          color: rgba(102, 112, 133, 1);
-        }
-
-        .ud-arrow {
-          position: absolute;
-          right: 8px;
-          top: 50%;
-          transform: translateY(-50%);
-          width: 16px;
-          height: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: rgba(194, 194, 194, 1);
-          transition: transform 0.2s cubic-bezier(.4, 0, .2, 1);
-          pointer-events: none;
-        }
-
-        .ud-arrow.open {
-          transform: translateY(-50%) rotate(180deg);
-        }
-
-        .ud-arrow svg {
-          width: 16px;
-          height: 16px;
-        }
-
-        .ud-list {
-          position: absolute;
-          top: calc(100% + 4px);
-          left: 0;
-          right: 0;
-          background: #fff;
-          border: 1px solid rgb(224, 224, 230);
-          border-radius: 3px;
-          box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
-          max-height: 280px;
-          overflow-y: auto;
-          z-index: 99999;
-          display: none;
-        }
-
-        .ud-list.open {
-          display: block;
-        }
-
-        .ud-item {
-          padding: 8px 12px;
-          cursor: pointer;
-          transition: background-color 0.15s;
-          color: rgba(52, 64, 84, 1);
-          font-size: 14px;
-        }
-
-        .ud-item:hover {
-          background-color: rgb(250, 250, 252);
-        }
-
-        .ud-item.selected {
-          background-color: #eff6ff;
-          color: #155EEF;
-        }
-
-        .ud-item-name {
-          font-weight: 400;
-        }
-
-        .ud-empty {
-          padding: 16px;
-          text-align: center;
-          color: rgba(102, 112, 133, 1);
-        }
-      </style>
-    `;
-  }
-
-  /**
-   * Ícone de seta (estilo GHL)
+   * Ícone de seta (GHL)
    */
   _getArrowIcon() {
     return `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -251,7 +82,7 @@ export class UserDropdown {
   }
 
   /**
-   * Ícone de fechar (X) para tag
+   * Ícone de fechar (GHL)
    */
   _getCloseIcon() {
     return `<svg viewBox="0 0 12 12" version="1.1" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -273,36 +104,125 @@ export class UserDropdown {
   }
 
   /**
-   * Renderiza o HTML do componente
+   * CSS mínimo apenas para o menu dropdown (posicionamento)
+   */
+  _getMenuStyles() {
+    return `
+      <style>
+        .ud-menu-portal {
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          z-index: 999999;
+          margin-top: 4px;
+        }
+        .ud-menu-portal .hr-base-select-menu {
+          max-height: 280px;
+          overflow-y: auto;
+          background: #fff;
+          border-radius: 3px;
+          box-shadow: 0 3px 6px -4px rgba(0,0,0,.12), 0 6px 16px 0 rgba(0,0,0,.08), 0 9px 28px 8px rgba(0,0,0,.05);
+          border: 1px solid rgb(224, 224, 230);
+        }
+        .ud-menu-portal .hr-base-select-option {
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 14px;
+          color: rgba(52, 64, 84, 1);
+          transition: background-color 0.15s;
+        }
+        .ud-menu-portal .hr-base-select-option:hover {
+          background-color: rgb(250, 250, 252);
+        }
+        .ud-menu-portal .hr-base-select-option--selected {
+          background-color: #eff6ff;
+          color: #155EEF;
+        }
+      </style>
+    `;
+  }
+
+  /**
+   * Renderiza o HTML do componente usando classes GHL
    */
   _render() {
+    const { isOpen, selectedUser } = this.state;
+
+    const hasSelection = !!selectedUser;
+    const selectionClasses = [
+      'hr-base-selection',
+      hasSelection ? 'hr-base-selection--selected' : '',
+    ].filter(Boolean).join(' ');
+
+    // Tag do usuário selecionado
+    const tagHtml = hasSelection ? `
+      <div class="hr-base-selection-tag-wrapper">
+        <div class="hr-tag hr-tag--closable">
+          <span class="hr-tag__content">${this._escapeHtml(selectedUser.name)}</span>
+          <button type="button" tabindex="0" aria-label="close" class="hr-base-close hr-base-close--absolute hr-tag__close" data-action="clear">
+            <i class="hr-base-icon">${this._getCloseIcon()}</i>
+          </button>
+          <div class="hr-tag__border"></div>
+        </div>
+      </div>
+    ` : '';
+
+    // Placeholder quando não há seleção
+    const placeholderHtml = !hasSelection ? `
+      <div class="hr-base-selection__placeholder" style="color: rgba(102, 112, 133, 1);">
+        Selecione um usuário
+      </div>
+    ` : '';
+
+    return `
+      <div class="hr-select ui-select" data-component-id="${this.id}" style="position: relative;">
+        <div class="${selectionClasses}" style="--n-border: 1px solid rgb(224, 224, 230); --n-border-hover: 1px solid #004EEB; --n-border-focus: 1px solid #155EEF; --n-border-radius: 3px; --n-height: 40px; --n-font-size: 15px; --n-color: rgba(255, 255, 255, 1); --n-text-color: rgba(52, 64, 84, 1); --n-arrow-color: rgba(194, 194, 194, 1); --n-box-shadow-focus: 0 0 0 2px rgba(21, 94, 239, 0.2);">
+          <div class="hr-base-selection-tags" tabindex="0">
+            ${tagHtml}
+            ${placeholderHtml}
+            <div class="hr-base-selection-input-tag">
+              <input tabindex="-1" class="hr-base-selection-input-tag__input" value="" readonly>
+              <span class="hr-base-selection-input-tag__mirror"></span>
+            </div>
+            <div class="hr-base-loading hr-base-suffix" role="img">
+              <div class="hr-base-loading__placeholder">
+                <div class="hr-base-clear">
+                  <div class="hr-base-clear__placeholder">
+                    <i class="hr-base-icon hr-base-suffix__arrow">${this._getArrowIcon()}</i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hr-base-selection__border"></div>
+          <div class="hr-base-selection__state-border"></div>
+        </div>
+        ${this._renderMenu()}
+      </div>
+    `;
+  }
+
+  /**
+   * Renderiza o menu dropdown
+   */
+  _renderMenu() {
     const { isOpen, users, selectedUser } = this.state;
 
-    const displayValue = selectedUser
-      ? `<div class="ud-tag">
-           <span class="ud-tag-text">${this._escapeHtml(selectedUser.name)}</span>
-           <span class="ud-tag-close" data-action="clear">${this._getCloseIcon()}</span>
-         </div>`
-      : '<span class="ud-placeholder">Selecione um usuário</span>';
+    if (!isOpen) return '';
 
     const listItems = users.length > 0
       ? users.map(user => `
-          <div class="ud-item${selectedUser?.id === user.id ? ' selected' : ''}" data-user-id="${user.id}">
-            <div class="ud-item-name">${this._escapeHtml(user.name)}</div>
+          <div class="hr-base-select-option${selectedUser?.id === user.id ? ' hr-base-select-option--selected' : ''}" data-user-id="${user.id}">
+            ${this._escapeHtml(user.name)}
           </div>
         `).join('')
-      : '<div class="ud-empty">Nenhum usuário disponível</div>';
+      : '<div class="hr-base-select-option" style="color: rgba(102, 112, 133, 1); cursor: default;">Nenhum usuário disponível</div>';
 
     return `
-      ${this._getStyles()}
-      <div class="ud-container" data-component-id="${this.id}">
-        <div class="ud-trigger${isOpen ? ' open' : ''}">
-          <div class="ud-tags">
-            ${displayValue}
-          </div>
-          <span class="ud-arrow${isOpen ? ' open' : ''}">${this._getArrowIcon()}</span>
-        </div>
-        <div class="ud-list${isOpen ? ' open' : ''}">
+      ${this._getMenuStyles()}
+      <div class="ud-menu-portal">
+        <div class="hr-base-select-menu">
           ${listItems}
         </div>
       </div>
@@ -354,6 +274,10 @@ export class UserDropdown {
    * Handler de toggle do dropdown
    */
   _handleToggle(event) {
+    // Não abre se clicou no botão de fechar
+    if (event.target.closest('[data-action="clear"]')) {
+      return;
+    }
     event.stopPropagation();
     event.preventDefault();
     this.setState({ isOpen: !this.state.isOpen });
@@ -363,10 +287,12 @@ export class UserDropdown {
    * Handler de seleção de usuário
    */
   _handleSelect(event) {
-    const item = event.target.closest('.ud-item');
+    const item = event.target.closest('.hr-base-select-option');
     if (!item) return;
 
     const userId = item.dataset.userId;
+    if (!userId) return; // Item sem ID (ex: "nenhum usuário")
+
     const selectedUser = this.state.users.find(u => u.id === userId);
 
     if (selectedUser) {
@@ -407,16 +333,16 @@ export class UserDropdown {
   _bindEvents() {
     if (!this.element) return;
 
-    const trigger = this.element.querySelector('.ud-trigger');
-    const list = this.element.querySelector('.ud-list');
-    const closeBtn = this.element.querySelector('.ud-tag-close');
+    const selection = this.element.querySelector('.hr-base-selection');
+    const menu = this.element.querySelector('.hr-base-select-menu');
+    const closeBtn = this.element.querySelector('[data-action="clear"]');
 
-    if (trigger) {
-      trigger.addEventListener('click', this._handleToggle);
+    if (selection) {
+      selection.addEventListener('click', this._handleToggle);
     }
 
-    if (list) {
-      list.addEventListener('click', this._handleSelect);
+    if (menu) {
+      menu.addEventListener('click', this._handleSelect);
     }
 
     if (closeBtn) {
