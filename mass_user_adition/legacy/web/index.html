@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GHL - Usuarios em Lote</title>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f6f7f9;
+      color: #1f2328;
+    }
+    main {
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 24px;
+      background: #fff;
+      border: 1px solid #e2e4e8;
+      border-radius: 10px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 22px;
+    }
+    .row {
+      margin: 14px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    label {
+      font-size: 14px;
+    }
+    input[type="text"],
+    input[type="number"],
+    input[type="file"] {
+      padding: 8px;
+      border: 1px solid #cfd4d9;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      background: #1f6feb;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #9fbff0;
+      cursor: not-allowed;
+    }
+    details {
+      margin: 12px 0;
+    }
+    pre {
+      margin-top: 16px;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: 360px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>GHL - Usuarios em Lote</h1>
+    <p>Selecione o CSV e clique em Executar.</p>
+
+    <div class="row">
+      <label>CSV</label>
+      <input type="file" id="csv" accept=".csv" />
+    </div>
+
+    <div class="row">
+      <label>Location ID / Company ID</label>
+      <input type="text" id="locationId" placeholder="citQs4acsN1StzOEDuvj" />
+      <small style="color: #656d76; font-size: 12px;">
+        Obrigatório para listar usuários. Location ID e Company ID são a mesma coisa.
+      </small>
+    </div>
+
+    <details>
+      <summary>Opcoes avancadas</summary>
+      <div class="row">
+        <label>Delay (s)</label>
+        <input type="number" id="delay" value="0.3" step="0.1" min="0" />
+      </div>
+
+      <div class="row">
+        <label>
+          <input type="checkbox" id="dryRun" />
+          Dry-run (nao envia para o GHL)
+        </label>
+      </div>
+
+      <div class="row">
+        <label>List limit</label>
+        <input type="number" id="listLimit" value="100" step="1" min="1" />
+      </div>
+    </details>
+
+    <button id="run">Executar</button>
+    <button id="list">Listar usuarios</button>
+
+    <pre id="output">Aguardando...</pre>
+  </main>
+
+  <script>
+    const output = document.getElementById('output');
+    const runBtn = document.getElementById('run');
+    const listBtn = document.getElementById('list');
+
+    function setOutput(text) {
+      output.textContent = text;
+    }
+
+    function trim(text, limit = 500) {
+      if (!text) return '';
+      return text.length > limit ? text.slice(0, limit) + '...' : text;
+    }
+
+    async function readResponse(response) {
+      const text = await response.text();
+      try {
+        return { ok: response.ok, data: JSON.parse(text), raw: text };
+      } catch {
+        return { ok: response.ok, data: null, raw: text };
+      }
+    }
+
+    runBtn.addEventListener('click', async () => {
+      const fileInput = document.getElementById('csv');
+      const file = fileInput.files[0];
+      if (!file) {
+        setOutput('Selecione um CSV primeiro.');
+        return;
+      }
+
+      runBtn.disabled = true;
+      setOutput('Enviando...');
+
+      try {
+        const csv = await file.text();
+        const payload = {
+          csv,
+          delay: parseFloat(document.getElementById('delay').value || '0'),
+          dryRun: document.getElementById('dryRun').checked,
+          locationId: document.getElementById('locationId').value.trim(),
+        };
+
+        const response = await fetch('/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const result = await readResponse(response);
+        if (!result.ok || !result.data) {
+          const detail = result.data?.error || trim(result.raw);
+          setOutput(detail || 'Falha ao processar.');
+          return;
+        }
+
+        const lines = [];
+        lines.push(`Success: ${result.data.summary.success}, Failed: ${result.data.summary.failed}`);
+        for (const item of result.data.results) {
+          const suffix = item.body ? ` body=${trim(item.body)}` : '';
+          const msg = item.message ? ` ${trim(item.message)}` : '';
+          lines.push(`Row ${item.row}: ${item.status}${msg}${suffix}`);
+        }
+        setOutput(lines.join('\n'));
+      } catch (err) {
+        setOutput('Erro: ' + err.message);
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+
+    listBtn.addEventListener('click', async () => {
+      const locationId = document.getElementById('locationId').value.trim();
+      if (!locationId) {
+        setOutput('Informe Location ID / Company ID para listar usuarios.');
+        return;
+      }
+
+      listBtn.disabled = true;
+      setOutput('Buscando usuarios...');
+
+      try {
+        const payload = {
+          locationId,
+          listLimit: parseInt(document.getElementById('listLimit').value || '100', 10),
+          saveFiles: true,
+        };
+
+        const response = await fetch('/list', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const result = await readResponse(response);
+        if (!result.ok || !result.data) {
+          const detail = result.data?.error || trim(result.raw);
+          setOutput(detail || 'Falha ao listar.');
+          return;
+        }
+
+        const lines = [];
+        const total = result.data.summary.total ?? result.data.summary.count;
+        lines.push(`Users: ${result.data.summary.count} / ${total}`);
+        if (result.data.files) {
+          lines.push(`Saved: ${result.data.files.json}, ${result.data.files.csv}`);
+        }
+        for (const user of result.data.users || []) {
+          const role = user.role ? `${user.role}/${user.type}` : '';
+          const locs = (user.locationIds || []).join(',');
+          lines.push(`${user.name} | ${user.email} | ${role} | ${locs} | ${user.id}`);
+        }
+        setOutput(lines.join('\n'));
+      } catch (err) {
+        setOutput('Erro: ' + err.message);
+      } finally {
+        listBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
