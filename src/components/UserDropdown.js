@@ -31,6 +31,7 @@ export class UserDropdown {
 
     // Callbacks
     this._eventListeners = [];
+    this._justToggled = false;
 
     // Bind de métodos
     this._handleToggle = this._handleToggle.bind(this);
@@ -287,6 +288,11 @@ export class UserDropdown {
     }
     event.stopPropagation();
     event.preventDefault();
+
+    // Flag para ignorar click outside imediatamente após toggle
+    this._justToggled = true;
+    setTimeout(() => { this._justToggled = false; }, 100);
+
     this.setState({ isOpen: !this.state.isOpen });
   }
 
@@ -316,6 +322,9 @@ export class UserDropdown {
    * Handler de clique fora do dropdown
    */
   _handleClickOutside(event) {
+    // Ignora se acabou de fazer toggle (evita fechar imediatamente)
+    if (this._justToggled) return;
+
     if (this.element && !this.element.contains(event.target)) {
       if (this.state.isOpen) {
         this.setState({ isOpen: false });
