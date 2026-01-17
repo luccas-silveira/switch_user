@@ -37,6 +37,9 @@ function getDropdown() {
   return dropdownInstance;
 }
 
+// Cache de usuários para evitar chamadas repetidas
+let usersCache = null;
+
 async function startApp() {
   try {
     logger.info('Iniciando Switch User...');
@@ -48,22 +51,33 @@ async function startApp() {
       return;
     }
 
-    // Inicializa core
-    await init({ debug: true, namespace: 'ui-injector' });
+    // Inicializa core (não bloqueia)
+    init({ debug: true, namespace: 'ui-injector' });
 
-    // Busca usuários
-    logger.debug('Buscando usuários da API...');
-    const users = await fetchUsersByLocation(ALLOWED_LOCATION_ID);
-    logger.info(users.length + ' usuários carregados');
+    // Busca usuários e aguarda elemento EM PARALELO
+    const usersPromise = usersCache
+      ? Promise.resolve(usersCache)
+      : (async () => {
+          logger.debug('Buscando usuários da API...');
+          const users = await fetchUsersByLocation(ALLOWED_LOCATION_ID);
+          usersCache = users;
+          logger.info(users.length + ' usuários carregados');
+          return users;
+        })();
 
-    // Aguarda elemento
-    let el = document.querySelector(TARGET_SELECTOR);
-    let tries = 0;
-    while (!el && tries < 50) {
-      await new Promise(r => setTimeout(r, 200));
-      el = document.querySelector(TARGET_SELECTOR);
-      tries++;
-    }
+    const elementPromise = (async () => {
+      let el = document.querySelector(TARGET_SELECTOR);
+      let tries = 0;
+      while (!el && tries < 100) {
+        await new Promise(r => setTimeout(r, 50)); // 50ms ao invés de 200ms
+        el = document.querySelector(TARGET_SELECTOR);
+        tries++;
+      }
+      return el;
+    })();
+
+    // Aguarda ambos em paralelo
+    const [users, el] = await Promise.all([usersPromise, elementPromise]);
 
     if (!el) {
       logger.error(`Elemento ${TARGET_SELECTOR} não encontrado`);
@@ -163,7 +177,7 @@ function scheduleInitialInjection() {
   initialTimerId = setTimeout(() => {
     initialTimerId = null;
     handleRouteChange();
-  }, 1000);
+  }, 100); // Reduzido de 1000ms para 100ms
 }
 
 function startRouteWatcher() {
@@ -171,7 +185,7 @@ function startRouteWatcher() {
   routeWatcherStarted = true;
   watchSpaRouteChanges(() => {
     handleRouteChange();
-  }, { pollInterval: 1000 });
+  }, { pollInterval: 500 }); // Reduzido de 1000ms para 500ms
 }
 
 // Auto-inicia
