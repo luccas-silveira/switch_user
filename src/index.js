@@ -6,20 +6,18 @@
 
 import { UserDropdown } from './components/index.js';
 import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
-import { getOpportunityId, getOpportunityIdFromUrl, updateOpportunityOwner } from './services/opportunityApi.js';
+import { getOpportunityId, updateOpportunityOwner } from './services/opportunityApi.js';
 import { init } from './core/index.js';
-import { logger, watchSpaRouteChanges } from './utils/index.js';
+import { logger } from './utils/index.js';
 
 const ALLOWED_LOCATION_ID = 'citQs4acsN1StzOEDuvj';
 const TARGET_SELECTOR = '#OpportunityOwner';
 const DROPDOWN_SELECTOR = '[data-component-id^="user-dropdown"]';
 
 let dropdownInstance = null;
-let lastOpportunityId = null;
 let reinjectInProgress = false;
 let reinjectQueued = false;
-let initialTimerId = null;
-let routeWatcherStarted = false;
+let domObserver = null;
 
 // Cache de usuários e prefetch imediato
 let usersCache = null;
@@ -148,17 +146,12 @@ async function runReinject() {
     reinjectInProgress = false;
     if (reinjectQueued) {
       reinjectQueued = false;
-      handleRouteChange();
+      checkAndInject();
     }
   }
 }
 
 function scheduleReinject() {
-  if (initialTimerId) {
-    clearTimeout(initialTimerId);
-    initialTimerId = null;
-  }
-
   if (reinjectInProgress) {
     reinjectQueued = true;
     return;
@@ -167,40 +160,48 @@ function scheduleReinject() {
   runReinject();
 }
 
-function handleRouteChange() {
+function checkAndInject() {
   const locationId = getLocationIdFromUrl();
-  const opportunityId = getOpportunityIdFromUrl();
+  if (locationId !== ALLOWED_LOCATION_ID) {
+    return; // Não está na location permitida
+  }
 
-  if (locationId !== ALLOWED_LOCATION_ID || !opportunityId) {
+  const ownerEl = document.querySelector(TARGET_SELECTOR);
+  const hasDropdown = hasInjectedDropdown();
+
+  if (ownerEl && !hasDropdown) {
+    // Elemento apareceu, injetar dropdown
+    logger.debug('Elemento #OpportunityOwner detectado, injetando dropdown...');
+    scheduleReinject();
+  } else if (!ownerEl && hasDropdown) {
+    // Elemento sumiu, limpar
+    logger.debug('Elemento #OpportunityOwner removido, limpando dropdown...');
     cleanupInjectedDropdowns();
-    lastOpportunityId = opportunityId;
+  }
+}
+
+function startDomObserver() {
+  if (domObserver) return; // Já está observando
+
+  const locationId = getLocationIdFromUrl();
+  if (locationId !== ALLOWED_LOCATION_ID) {
+    logger.debug('Location não permitida, não iniciando observer');
     return;
   }
 
-  const opportunityChanged = opportunityId !== lastOpportunityId;
-  if (opportunityChanged) {
-    lastOpportunityId = opportunityId;
-  }
+  logger.debug('Iniciando MutationObserver para detectar #OpportunityOwner...');
 
-  if (opportunityChanged || !hasInjectedDropdown()) {
-    scheduleReinject();
-  }
-}
+  domObserver = new MutationObserver(() => {
+    checkAndInject();
+  });
 
-function scheduleInitialInjection() {
-  if (initialTimerId) return;
-  initialTimerId = setTimeout(() => {
-    initialTimerId = null;
-    handleRouteChange();
-  }, 100); // Reduzido de 1000ms para 100ms
-}
+  domObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
 
-function startRouteWatcher() {
-  if (routeWatcherStarted) return;
-  routeWatcherStarted = true;
-  watchSpaRouteChanges(() => {
-    handleRouteChange();
-  }, { pollInterval: 500 }); // Reduzido de 1000ms para 500ms
+  // Verifica imediatamente
+  checkAndInject();
 }
 
 // Auto-inicia
@@ -214,8 +215,8 @@ if (typeof window !== 'undefined') {
   // Inicia prefetch de usuários IMEDIATAMENTE
   startUsersPrefetch();
 
-  startRouteWatcher();
-  scheduleInitialInjection();
+  // Inicia observer do DOM
+  startDomObserver();
 }
 
 export { startApp as start, startApp as init, getDropdown };
