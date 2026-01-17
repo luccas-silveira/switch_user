@@ -69,7 +69,39 @@ export function getOpportunityIdFromUrl() {
   return match ? match[1] : null;
 }
 
+/**
+ * Extrai o opportunityId do DOM (elemento "Registros de auditoria")
+ * Busca o span com o ID dentro do container de auditoria
+ *
+ * @returns {string|null}
+ */
+export function getOpportunityIdFromDOM() {
+  // Busca o span que contém "Registros de auditoria:"
+  const spans = document.querySelectorAll('span');
+  for (const span of spans) {
+    if (span.textContent?.includes('Registros de auditoria:')) {
+      // O ID está no próximo span com classe cursor-pointer
+      const idSpan = span.querySelector('span.cursor-pointer');
+      if (idSpan) {
+        return idSpan.textContent?.trim() || null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Extrai o opportunityId (tenta DOM primeiro, depois URL)
+ *
+ * @returns {string|null}
+ */
+export function getOpportunityId() {
+  return getOpportunityIdFromDOM() || getOpportunityIdFromUrl();
+}
+
 export default {
   updateOpportunityOwner,
   getOpportunityIdFromUrl,
+  getOpportunityIdFromDOM,
+  getOpportunityId,
 };

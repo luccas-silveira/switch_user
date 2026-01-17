@@ -6,7 +6,7 @@
 
 import { UserDropdown } from './components/index.js';
 import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
-import { getOpportunityIdFromUrl } from './services/opportunityApi.js';
+import { getOpportunityId, getOpportunityIdFromUrl, updateOpportunityOwner } from './services/opportunityApi.js';
 import { init } from './core/index.js';
 import { logger, watchSpaRouteChanges } from './utils/index.js';
 
@@ -81,8 +81,25 @@ async function startApp() {
       allowedLocationId: ALLOWED_LOCATION_ID,
     });
 
-    dropdownInstance.on('user:selected', (user) => {
-      logger.info('Selecionado: ' + user.name);
+    dropdownInstance.on('user:selected', async (user) => {
+      const opportunityId = getOpportunityId();
+      if (!opportunityId) {
+        logger.error('Opportunity ID não encontrado');
+        return;
+      }
+
+      logger.info('Atualizando owner para: ' + user.name);
+
+      try {
+        const result = await updateOpportunityOwner(opportunityId, user.id);
+        if (result.ok) {
+          logger.info('Owner atualizado com sucesso');
+        } else {
+          logger.error('Falha ao atualizar: ' + JSON.stringify(result.data));
+        }
+      } catch (err) {
+        logger.error('Erro ao atualizar owner: ' + err.message);
+      }
     });
 
     await dropdownInstance.mountReplacing();
