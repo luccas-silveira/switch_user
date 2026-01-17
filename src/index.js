@@ -26,7 +26,7 @@ import { init, destroy, isInitialized } from './core/index.js';
 import { getConfig, setConfig, resetConfig } from './config/index.js';
 
 // Componentes
-import { Component, RedSquare } from './components/index.js';
+import { Component, RedSquare, UserDropdown } from './components/index.js';
 
 // Utilitários
 import {
@@ -62,6 +62,7 @@ const UIInjector = {
   // Componentes
   Component,
   RedSquare,
+  UserDropdown,
 
   // Utilitários
   utils: {
@@ -99,6 +100,7 @@ export {
   resetConfig,
   Component,
   RedSquare,
+  UserDropdown,
   logger,
   eventBus,
   styleManager,

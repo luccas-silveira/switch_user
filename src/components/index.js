@@ -12,3 +12,4 @@ export { Component } from './base/index.js';
 // export { Modal } from './Modal.js';
 // export { Toast } from './Toast.js';
 export { RedSquare } from './RedSquare.js';
+export { UserDropdown } from './UserDropdown.js';
