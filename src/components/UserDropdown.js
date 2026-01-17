@@ -105,9 +105,16 @@ export class UserDropdown {
   }
 
   /**
-   * CSS mínimo apenas para o menu dropdown (posicionamento)
+   * CSS variables do menu GHL
    */
   _getMenuStyles() {
+    return `--n-height: calc(var(--n-option-height) * 7.6); --n-action-divider-color: rgb(239, 239, 245); --n-action-text-color: rgba(52, 64, 84, 1); --n-bezier: cubic-bezier(.4, 0, .2, 1); --n-border-radius: 3px; --n-color: #fff; --n-option-font-size: 14px; --n-group-header-text-color: rgb(118, 124, 130); --n-option-check-color: #155EEF; --n-option-color-pending: rgb(243, 243, 245); --n-option-color-active: rgba(0, 0, 0, 0); --n-option-color-active-pending: rgb(243, 243, 245); --n-option-height: 34px; --n-option-opacity-disabled: 0.5; --n-option-text-color: rgba(52, 64, 84, 1); --n-option-text-color-active: #155EEF; --n-option-text-color-disabled: rgba(194, 194, 194, 1); --n-option-text-color-pressed: #155EEF; --n-option-padding: 0 12px; --n-option-padding-left: 12px; --n-option-padding-right: 12px; --n-loading-color: #155EEF; --n-loading-size: 18px; --n-menu-box-shadow: 0 3px 6px -4px rgba(0, 0, 0, .12), 0 6px 16px 0 rgba(0, 0, 0, .08), 0 9px 28px 8px rgba(0, 0, 0, .05);`;
+  }
+
+  /**
+   * CSS para posicionamento do menu portal
+   */
+  _getPortalStyles() {
     return `
       <style>
         .ud-menu-portal {
@@ -117,28 +124,6 @@ export class UserDropdown {
           right: 0;
           z-index: 999999;
           margin-top: 4px;
-        }
-        .ud-menu-portal .hr-base-select-menu {
-          max-height: 280px;
-          overflow-y: auto;
-          background: #fff;
-          border-radius: 3px;
-          box-shadow: 0 3px 6px -4px rgba(0,0,0,.12), 0 6px 16px 0 rgba(0,0,0,.08), 0 9px 28px 8px rgba(0,0,0,.05);
-          border: 1px solid rgb(224, 224, 230);
-        }
-        .ud-menu-portal .hr-base-select-option {
-          padding: 8px 12px;
-          cursor: pointer;
-          font-size: 14px;
-          color: rgba(52, 64, 84, 1);
-          transition: background-color 0.15s;
-        }
-        .ud-menu-portal .hr-base-select-option:hover {
-          background-color: rgb(250, 250, 252);
-        }
-        .ud-menu-portal .hr-base-select-option--selected {
-          background-color: #eff6ff;
-          color: #155EEF;
         }
       </style>
     `;
@@ -220,17 +205,36 @@ export class UserDropdown {
 
     const listItems = users.length > 0
       ? users.map(user => `
-          <div class="hr-base-select-option${selectedUser?.id === user.id ? ' hr-base-select-option--selected' : ''}" data-user-id="${user.id}">
-            ${this._escapeHtml(user.name)}
+          <div class="hr-base-select-option hr-base-select-option--show-checkmark${selectedUser?.id === user.id ? ' hr-base-select-option--pending' : ''}" data-user-id="${user.id}">
+            <div class="hr-base-select-option__content">
+              <div style="font-weight: 400; font-size: 14px; line-height: 20px; padding: 8px 0px; width: 100%; box-sizing: border-box; display: flex; align-items: center; flex-direction: column;">
+                <p style="margin: 0px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; width: 100%;">${this._escapeHtml(user.name)}</p>
+                <span style="color: var(--gray-500); margin: 0px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; width: 100%;"></span>
+              </div>
+            </div>
           </div>
         `).join('')
-      : '<div class="hr-base-select-option" style="color: rgba(102, 112, 133, 1); cursor: default;">Nenhum usuário disponível</div>';
+      : `<div class="hr-base-select-option">
+          <div class="hr-base-select-option__content">
+            <div style="font-weight: 400; font-size: 14px; line-height: 20px; padding: 8px 0px; width: 100%;">
+              <p style="margin: 0px; color: rgba(102, 112, 133, 1);">Nenhum usuário disponível</p>
+            </div>
+          </div>
+        </div>`;
 
     return `
-      ${this._getMenuStyles()}
+      ${this._getPortalStyles()}
       <div class="ud-menu-portal">
-        <div class="hr-base-select-menu">
-          ${listItems}
+        <div tabindex="0" class="hr-base-select-menu hr-base-select-menu--multiple hr-select-menu ui-select__menu" style="${this._getMenuStyles()}">
+          <div class="hr-scrollbar" style="--n-scrollbar-bezier: cubic-bezier(.4, 0, .2, 1); --n-scrollbar-color: rgba(0, 0, 0, 0.25); --n-scrollbar-color-hover: rgba(0, 0, 0, 0.4); --n-scrollbar-border-radius: 5px; --n-scrollbar-width: 5px; --n-scrollbar-height: 5px;">
+            <div class="hr-virtual-list v-vl">
+              <div class="v-vl-items" style="box-sizing: content-box; padding-top: 4px; padding-bottom: 4px;">
+                <div class="v-vl-visible-items">
+                  ${listItems}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     `;
