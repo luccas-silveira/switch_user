@@ -33,6 +33,10 @@ function cleanupInjectedDropdowns() {
   }
 }
 
+function getDropdown() {
+  return dropdownInstance;
+}
+
 async function startApp() {
   try {
     logger.info('Iniciando Switch User...');
@@ -155,9 +159,17 @@ function startRouteWatcher() {
 
 // Auto-inicia
 if (typeof window !== 'undefined') {
-  window.UIInjector = { start: startApp, getDropdown: () => dropdownInstance };
+  window.UIInjector = {
+    start: startApp,
+    init: startApp,
+    getDropdown,
+  };
   startRouteWatcher();
   scheduleInitialInjection();
 }
 
-export default { start: startApp };
+export default {
+  start: startApp,
+  init: startApp,
+  getDropdown,
+};

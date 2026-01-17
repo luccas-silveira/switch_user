@@ -194,11 +194,21 @@ export function getDropdown() {
 
 // Auto-inicialização
 if (typeof window !== 'undefined') {
-  window.SwitchUser = { start: startApp, getDropdown };
+  window.SwitchUser = {
+    start: startApp,
+    init: startApp,
+    startApp,
+    getDropdown,
+  };
 
   // Aguarda um pouco para o GHL carregar
   startRouteWatcher();
   scheduleInitialInjection();
 }
 
-export default { startApp, getDropdown };
+export default {
+  startApp,
+  start: startApp,
+  init: startApp,
+  getDropdown,
+};

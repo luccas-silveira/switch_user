@@ -90,6 +90,7 @@ const app = await UIInjector.init({
   }
 });
 ```
+Observação: `UIInjector.init()` e `UIInjector.start()` são equivalentes neste bundle.
 
 ### Criando Componentes
 ```javascript
