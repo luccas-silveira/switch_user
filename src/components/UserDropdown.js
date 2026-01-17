@@ -35,6 +35,7 @@ export class UserDropdown {
     this._handleToggle = this._handleToggle.bind(this);
     this._handleSelect = this._handleSelect.bind(this);
     this._handleClickOutside = this._handleClickOutside.bind(this);
+    this._handleClear = this._handleClear.bind(this);
   }
 
   /**
@@ -71,7 +72,7 @@ export class UserDropdown {
   }
 
   /**
-   * CSS do componente
+   * CSS do componente - estilo GHL
    */
   _getStyles() {
     return `
@@ -81,58 +82,109 @@ export class UserDropdown {
           display: inline-block;
           width: 100%;
           font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          font-size: 14px;
+          font-size: 15px;
         }
 
         .ud-trigger {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          padding: 9px 12px;
-          background: #fff;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
+          padding: 3px 26px 3px 12px;
+          background: rgba(255, 255, 255, 1);
+          border: 1px solid rgb(224, 224, 230);
+          border-radius: 3px;
           cursor: pointer;
           min-height: 40px;
-          transition: all 0.15s ease;
+          transition: all 0.2s cubic-bezier(.4, 0, .2, 1);
           width: 100%;
           box-sizing: border-box;
+          position: relative;
         }
 
         .ud-trigger:hover {
-          border-color: #cbd5e1;
+          border-color: #004EEB;
         }
 
         .ud-trigger.open {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+          border-color: #155EEF;
+          box-shadow: 0 0 0 2px rgba(21, 94, 239, 0.2);
         }
 
-        .ud-value {
+        .ud-tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
           flex: 1;
+          align-items: center;
+        }
+
+        .ud-tag {
+          display: inline-flex;
+          align-items: center;
+          padding: 0 7px;
+          height: 28px;
+          background: rgb(250, 250, 252);
+          border: 1px solid rgb(224, 224, 230);
+          border-radius: 2px;
+          font-size: 14px;
+          color: rgba(52, 64, 84, 1);
+          font-weight: 400;
+          position: relative;
+        }
+
+        .ud-tag-text {
+          max-width: 150px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          color: #1e293b;
         }
 
-        .ud-placeholder {
-          color: #94a3b8;
-        }
-
-        .ud-arrow {
-          margin-left: 8px;
-          width: 20px;
-          height: 20px;
+        .ud-tag-close {
           display: flex;
           align-items: center;
           justify-content: center;
-          color: #64748b;
-          transition: transform 0.2s ease;
+          margin-left: 4px;
+          width: 18px;
+          height: 18px;
+          cursor: pointer;
+          color: rgba(102, 102, 102, 1);
+          border-radius: 2px;
+          transition: background-color 0.15s;
+        }
+
+        .ud-tag-close:hover {
+          background-color: rgba(0, 0, 0, 0.09);
+        }
+
+        .ud-tag-close:active {
+          background-color: rgba(0, 0, 0, 0.13);
+        }
+
+        .ud-tag-close svg {
+          width: 14px;
+          height: 14px;
+        }
+
+        .ud-placeholder {
+          color: rgba(102, 112, 133, 1);
+        }
+
+        .ud-arrow {
+          position: absolute;
+          right: 8px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 16px;
+          height: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: rgba(194, 194, 194, 1);
+          transition: transform 0.2s cubic-bezier(.4, 0, .2, 1);
+          pointer-events: none;
         }
 
         .ud-arrow.open {
-          transform: rotate(180deg);
+          transform: translateY(-50%) rotate(180deg);
         }
 
         .ud-arrow svg {
@@ -146,9 +198,9 @@ export class UserDropdown {
           left: 0;
           right: 0;
           background: #fff;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+          border: 1px solid rgb(224, 224, 230);
+          border-radius: 3px;
+          box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 9px 28px 8px rgba(0, 0, 0, 0.05);
           max-height: 280px;
           overflow-y: auto;
           z-index: 99999;
@@ -160,45 +212,54 @@ export class UserDropdown {
         }
 
         .ud-item {
-          padding: 10px 14px;
+          padding: 8px 12px;
           cursor: pointer;
-          transition: background-color 0.1s ease;
-          border-bottom: 1px solid #f1f5f9;
-        }
-
-        .ud-item:last-child {
-          border-bottom: none;
+          transition: background-color 0.15s;
+          color: rgba(52, 64, 84, 1);
+          font-size: 14px;
         }
 
         .ud-item:hover {
-          background-color: #f8fafc;
+          background-color: rgb(250, 250, 252);
         }
 
         .ud-item.selected {
           background-color: #eff6ff;
+          color: #155EEF;
         }
 
         .ud-item-name {
-          font-weight: 500;
-          color: #1e293b;
-          font-size: 14px;
+          font-weight: 400;
         }
 
         .ud-empty {
           padding: 16px;
           text-align: center;
-          color: #94a3b8;
+          color: rgba(102, 112, 133, 1);
         }
       </style>
     `;
   }
 
   /**
-   * Ícone de seta
+   * Ícone de seta (estilo GHL)
    */
   _getArrowIcon() {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-      <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+    return `<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3.14645 5.64645C3.34171 5.45118 3.65829 5.45118 3.85355 5.64645L8 9.79289L12.1464 5.64645C12.3417 5.45118 12.6583 5.45118 12.8536 5.64645C13.0488 5.84171 13.0488 6.15829 12.8536 6.35355L8.35355 10.8536C8.15829 11.0488 7.84171 11.0488 7.64645 10.8536L3.14645 6.35355C2.95118 6.15829 2.95118 5.84171 3.14645 5.64645Z" fill="currentColor"></path>
+    </svg>`;
+  }
+
+  /**
+   * Ícone de fechar (X) para tag
+   */
+  _getCloseIcon() {
+    return `<svg viewBox="0 0 12 12" version="1.1" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g fill="currentColor" fill-rule="nonzero">
+          <path d="M2.08859116,2.2156945 L2.14644661,2.14644661 C2.32001296,1.97288026 2.58943736,1.95359511 2.7843055,2.08859116 L2.85355339,2.14644661 L6,5.293 L9.14644661,2.14644661 C9.34170876,1.95118446 9.65829124,1.95118446 9.85355339,2.14644661 C10.0488155,2.34170876 10.0488155,2.65829124 9.85355339,2.85355339 L6.707,6 L9.85355339,9.14644661 C10.0271197,9.32001296 10.0464049,9.58943736 9.91140884,9.7843055 L9.85355339,9.85355339 C9.67998704,10.0271197 9.41056264,10.0464049 9.2156945,9.91140884 L9.14644661,9.85355339 L6,6.707 L2.85355339,9.85355339 C2.65829124,10.0488155 2.34170876,10.0488155 2.14644661,9.85355339 C1.95118446,9.65829124 1.95118446,9.34170876 2.14644661,9.14644661 L5.293,6 L2.14644661,2.85355339 C1.97288026,2.67998704 1.95359511,2.41056264 2.08859116,2.2156945 L2.14644661,2.14644661 L2.08859116,2.2156945 Z"></path>
+        </g>
+      </g>
     </svg>`;
   }
 
@@ -218,8 +279,11 @@ export class UserDropdown {
     const { isOpen, users, selectedUser } = this.state;
 
     const displayValue = selectedUser
-      ? `<span class="ud-value">${this._escapeHtml(selectedUser.name)}</span>`
-      : '<span class="ud-value ud-placeholder">Selecione um usuário</span>';
+      ? `<div class="ud-tag">
+           <span class="ud-tag-text">${this._escapeHtml(selectedUser.name)}</span>
+           <span class="ud-tag-close" data-action="clear">${this._getCloseIcon()}</span>
+         </div>`
+      : '<span class="ud-placeholder">Selecione um usuário</span>';
 
     const listItems = users.length > 0
       ? users.map(user => `
@@ -233,7 +297,9 @@ export class UserDropdown {
       ${this._getStyles()}
       <div class="ud-container" data-component-id="${this.id}">
         <div class="ud-trigger${isOpen ? ' open' : ''}">
-          ${displayValue}
+          <div class="ud-tags">
+            ${displayValue}
+          </div>
           <span class="ud-arrow${isOpen ? ' open' : ''}">${this._getArrowIcon()}</span>
         </div>
         <div class="ud-list${isOpen ? ' open' : ''}">
@@ -325,6 +391,17 @@ export class UserDropdown {
   }
 
   /**
+   * Handler para limpar seleção (botão X na tag)
+   */
+  _handleClear(event) {
+    event.stopPropagation();
+    event.preventDefault();
+    this.setState({ selectedUser: null, isOpen: false });
+    this.emit('user:cleared', null);
+    logger.debug('Seleção limpa');
+  }
+
+  /**
    * Vincula eventos ao componente
    */
   _bindEvents() {
@@ -332,6 +409,7 @@ export class UserDropdown {
 
     const trigger = this.element.querySelector('.ud-trigger');
     const list = this.element.querySelector('.ud-list');
+    const closeBtn = this.element.querySelector('.ud-tag-close');
 
     if (trigger) {
       trigger.addEventListener('click', this._handleToggle);
@@ -339,6 +417,10 @@ export class UserDropdown {
 
     if (list) {
       list.addEventListener('click', this._handleSelect);
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', this._handleClear);
     }
 
     // Remove listener anterior antes de adicionar novo
