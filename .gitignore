@@ -5,7 +5,7 @@
 node_modules/
 
 # Build
-dist/
+# dist/ - incluído no repo para facilitar uso
 
 # IDE
 .idea/
