@@ -2,104 +2,127 @@
  * App - Módulo de inicialização integrado
  *
  * Inicializa o sistema completo:
- * 1. Inicializa o UI Injector
- * 2. Busca usuários da API
- * 3. Monta o UserDropdown com os dados
+ * 1. Busca usuários da API
+ * 2. Monta o UserDropdown com os dados
  */
 
-import { init } from './core/index.js';
 import { UserDropdown } from './components/index.js';
 import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
-import logger from './utils/logger.js';
 
 // Location ID permitido
 const ALLOWED_LOCATION_ID = 'citQs4acsN1StzOEDuvj';
 
-// Instância do dropdown (para acesso externo)
+// Instância do dropdown
 let dropdownInstance = null;
 
 /**
- * Inicializa a aplicação completa
- * @param {Object} options - Opções de configuração
- * @returns {Promise<Object>} API da aplicação
+ * Log simples
  */
-export async function startApp(options = {}) {
-  try {
-    const config = {
-      debug: true,
-      namespace: 'ui-injector',
-      ...options,
-    };
+function log(msg, data) {
+  console.log(`[SwitchUser] ${msg}`, data || '');
+}
 
-    logger.info('Iniciando aplicação Switch User...');
+/**
+ * Remove dropdowns anteriores que possam existir
+ */
+function cleanupPreviousDropdowns() {
+  // Remove qualquer dropdown anterior
+  const existingDropdowns = document.querySelectorAll('[data-component-id^="user-dropdown"]');
+  existingDropdowns.forEach(el => el.parentNode?.removeChild(el));
+
+  // Restaura o elemento original se estiver escondido
+  const original = document.querySelector('#OpportunityOwner');
+  if (original) {
+    original.style.display = '';
+  }
+}
+
+/**
+ * Inicializa a aplicação completa
+ */
+export async function startApp() {
+  try {
+    log('Iniciando...');
 
     // 1. Verifica se está na location correta
     const currentLocationId = getLocationIdFromUrl();
     if (currentLocationId !== ALLOWED_LOCATION_ID) {
-      logger.debug(`Location não permitida: ${currentLocationId}`);
+      log('Location não permitida:', currentLocationId);
       return null;
     }
 
-    logger.debug(`Location permitida: ${currentLocationId}`);
+    log('Location OK:', currentLocationId);
 
-    // 2. Inicializa o UI Injector
-    await init(config);
+    // 2. Limpa dropdowns anteriores
+    cleanupPreviousDropdowns();
 
     // 3. Busca usuários da API
-    logger.debug('Buscando usuários da API...');
+    log('Buscando usuários...');
     const users = await fetchUsersByLocation(ALLOWED_LOCATION_ID);
-    logger.info(`${users.length} usuários carregados`);
+    log('Usuários carregados:', users.length);
 
-    // 4. Cria e monta o dropdown com os usuários
+    if (!users || users.length === 0) {
+      log('ERRO: Nenhum usuário retornado da API');
+      return null;
+    }
+
+    // 4. Aguarda o elemento alvo existir
+    let attempts = 0;
+    let targetElement = document.querySelector('#OpportunityOwner');
+
+    while (!targetElement && attempts < 50) {
+      await new Promise(r => setTimeout(r, 200));
+      targetElement = document.querySelector('#OpportunityOwner');
+      attempts++;
+    }
+
+    if (!targetElement) {
+      log('ERRO: Elemento #OpportunityOwner não encontrado');
+      return null;
+    }
+
+    // 5. Cria o dropdown COM os usuários
+    log('Criando dropdown com', users.length, 'usuários');
+
     dropdownInstance = new UserDropdown({
-      users,
+      users: users,
       targetSelector: '#OpportunityOwner',
       allowedLocationId: ALLOWED_LOCATION_ID,
     });
 
-    // 5. Escuta evento de seleção
+    // 6. Escuta seleção
     dropdownInstance.on('user:selected', (user) => {
-      logger.info(`Usuário selecionado: ${user.name}`);
+      log('Selecionado:', user.name);
     });
 
-    // 6. Monta o dropdown
+    // 7. Monta
     await dropdownInstance.mountReplacing();
 
-    logger.info('Aplicação iniciada com sucesso!');
+    log('Pronto! Dropdown montado com', dropdownInstance.state.users.length, 'usuários');
 
-    return {
-      dropdown: dropdownInstance,
-      users,
-      getSelectedUser: () => dropdownInstance?.state?.selectedUser,
-    };
+    return { dropdown: dropdownInstance, users };
   } catch (error) {
-    logger.error(`Erro ao iniciar aplicação: ${error.message}`);
+    log('ERRO:', error.message);
+    console.error(error);
     throw error;
   }
 }
 
 /**
  * Obtém a instância do dropdown
- * @returns {UserDropdown|null}
  */
 export function getDropdown() {
   return dropdownInstance;
 }
 
-// Auto-inicialização quando o DOM estiver pronto
+// Auto-inicialização
 if (typeof window !== 'undefined') {
-  // Expõe função globalmente
-  window.SwitchUser = {
-    start: startApp,
-    getDropdown,
-  };
+  window.SwitchUser = { start: startApp, getDropdown };
 
-  // Auto-inicia quando o DOM carregar
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => startApp());
-  } else {
+  // Aguarda um pouco para o GHL carregar
+  setTimeout(() => {
     startApp();
-  }
+  }, 1000);
 }
 
 export default { startApp, getDropdown };
