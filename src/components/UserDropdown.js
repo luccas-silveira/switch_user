@@ -144,21 +144,27 @@ export class UserDropdown {
   }
 
   /**
+   * CSS variables do GHL para o selection
+   */
+  _getSelectionStyles() {
+    return `--n-bezier: cubic-bezier(.4, 0, .2, 1); --n-border: 1px solid rgb(224, 224, 230); --n-border-active: 1px solid #155EEF; --n-border-focus: 1px solid #004EEB; --n-border-hover: 1px solid #004EEB; --n-border-radius: 3px; --n-box-shadow-active: 0 0 0 2px rgba(21, 94, 239, 0.2); --n-box-shadow-focus: 0 0 0 2px rgba(21, 94, 239, 0.2); --n-box-shadow-hover: none; --n-caret-color: #155EEF; --n-color: rgba(255, 255, 255, 1); --n-color-active: rgba(255, 255, 255, 1); --n-color-disabled: rgb(250, 250, 252); --n-font-size: 15px; --n-height: 40px; --n-padding-single-top: 0; --n-padding-multiple-top: 3px; --n-padding-single-right: 26px; --n-padding-multiple-right: 26px; --n-padding-single-left: 12px; --n-padding-multiple-left: 12px; --n-padding-single-bottom: 0; --n-padding-multiple-bottom: 0; --n-placeholder-color: rgba(102, 112, 133, 1); --n-placeholder-color-disabled: rgba(209, 209, 209, 1); --n-text-color: rgba(52, 64, 84, 1); --n-text-color-disabled: rgba(194, 194, 194, 1); --n-arrow-color: rgba(194, 194, 194, 1); --n-arrow-color-disabled: rgba(209, 209, 209, 1); --n-loading-color: #155EEF; --n-color-active-warning: rgba(255, 255, 255, 1); --n-box-shadow-focus-warning: 0 0 0 2px rgba(240, 160, 32, 0.2); --n-box-shadow-active-warning: 0 0 0 2px rgba(240, 160, 32, 0.2); --n-box-shadow-hover-warning: none; --n-border-warning: 1px solid #f0a020; --n-border-focus-warning: 1px solid #fcb040; --n-border-hover-warning: 1px solid #fcb040; --n-border-active-warning: 1px solid #f0a020; --n-color-active-error: rgba(255, 255, 255, 1); --n-box-shadow-focus-error: 0 0 0 2px rgba(217, 45, 32, 0.2); --n-box-shadow-active-error: 0 0 0 2px rgba(217, 45, 32, 0.2); --n-box-shadow-hover-error: none; --n-border-error: 1px solid #D92D20; --n-border-focus-error: 1px solid #B42318; --n-border-hover-error: 1px solid #B42318; --n-border-active-error: 1px solid #D92D20; --n-clear-size: 16px; --n-clear-color: rgba(194, 194, 194, 1); --n-clear-color-hover: rgba(146, 146, 146, 1); --n-clear-color-pressed: rgba(175, 175, 175, 1); --n-arrow-size: 16px;`;
+  }
+
+  /**
    * Renderiza o HTML do componente usando classes GHL
    */
   _render() {
     const { isOpen, selectedUser } = this.state;
 
     const hasSelection = !!selectedUser;
-    const selectionClasses = [
-      'hr-base-selection',
-      hasSelection ? 'hr-base-selection--selected' : '',
-    ].filter(Boolean).join(' ');
+    const selectionClasses = hasSelection
+      ? 'hr-base-selection hr-base-selection--selected hr-base-selection--multiple'
+      : 'hr-base-selection hr-base-selection--multiple';
 
     // Tag do usuário selecionado
     const tagHtml = hasSelection ? `
       <div class="hr-base-selection-tag-wrapper">
-        <div class="hr-tag hr-tag--closable">
+        <div class="hr-tag hr-tag--closable" style="--n-font-weight-strong: 500; --n-avatar-size-override: calc(28px - 8px); --n-bezier: cubic-bezier(.4, 0, .2, 1); --n-border-radius: 2px; --n-border: 1px solid rgb(224, 224, 230); --n-close-icon-size: 14px; --n-close-color-pressed: rgba(0, 0, 0, .13); --n-close-color-hover: rgba(0, 0, 0, .09); --n-close-border-radius: 2px; --n-close-icon-color: rgba(102, 102, 102, 1); --n-close-icon-color-hover: rgba(102, 102, 102, 1); --n-close-icon-color-pressed: rgba(102, 102, 102, 1); --n-close-icon-color-disabled: rgba(102, 102, 102, 1); --n-close-margin-top: 0; --n-close-margin-right: 0; --n-close-margin-bottom: 0; --n-close-margin-left: 4px; --n-close-size: 18px; --n-color: rgb(250, 250, 252); --n-font-size: 14px; --n-height: 28px; --n-padding: 0 7px; --n-text-color: rgba(52, 64, 84, 1);">
           <span class="hr-tag__content">${this._escapeHtml(selectedUser.name)}</span>
           <button type="button" tabindex="0" aria-label="close" class="hr-base-close hr-base-close--absolute hr-tag__close" data-action="clear">
             <i class="hr-base-icon">${this._getCloseIcon()}</i>
@@ -170,22 +176,21 @@ export class UserDropdown {
 
     // Placeholder quando não há seleção
     const placeholderHtml = !hasSelection ? `
-      <div class="hr-base-selection__placeholder" style="color: rgba(102, 112, 133, 1);">
-        Selecione um usuário
+      <div class="hr-base-selection-placeholder hr-base-selection-overlay">
+        <div class="hr-base-selection-placeholder__inner">Selecione um usuário</div>
       </div>
     ` : '';
 
     return `
-      <div class="hr-select ui-select" data-component-id="${this.id}" style="position: relative; width: 100%;">
-        <div class="${selectionClasses}" style="--n-border: 1px solid rgb(224, 224, 230); --n-border-hover: 1px solid #004EEB; --n-border-focus: 1px solid #155EEF; --n-border-radius: 3px; --n-height: 40px; --n-font-size: 15px; --n-color: rgba(255, 255, 255, 1); --n-text-color: rgba(52, 64, 84, 1); --n-arrow-color: rgba(194, 194, 194, 1); --n-box-shadow-focus: 0 0 0 2px rgba(21, 94, 239, 0.2);">
+      <div class="hr-select ui-select" data-component-id="${this.id}">
+        <div class="${selectionClasses}" style="${this._getSelectionStyles()}">
           <div class="hr-base-selection-tags" tabindex="0">
             ${tagHtml}
-            ${placeholderHtml}
             <div class="hr-base-selection-input-tag">
               <input tabindex="-1" class="hr-base-selection-input-tag__input" value="" readonly>
               <span class="hr-base-selection-input-tag__mirror"></span>
             </div>
-            <div class="hr-base-loading hr-base-suffix" role="img">
+            <div class="hr-base-loading hr-base-suffix" role="img" aria-label="loading">
               <div class="hr-base-loading__placeholder">
                 <div class="hr-base-clear">
                   <div class="hr-base-clear__placeholder">
@@ -195,6 +200,7 @@ export class UserDropdown {
               </div>
             </div>
           </div>
+          ${placeholderHtml}
           <div class="hr-base-selection__border"></div>
           <div class="hr-base-selection__state-border"></div>
         </div>
