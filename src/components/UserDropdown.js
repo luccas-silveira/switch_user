@@ -176,7 +176,7 @@ export class UserDropdown {
     ` : '';
 
     return `
-      <div class="hr-select ui-select" data-component-id="${this.id}" style="position: relative;">
+      <div class="hr-select ui-select" data-component-id="${this.id}" style="position: relative; width: 100%;">
         <div class="${selectionClasses}" style="--n-border: 1px solid rgb(224, 224, 230); --n-border-hover: 1px solid #004EEB; --n-border-focus: 1px solid #155EEF; --n-border-radius: 3px; --n-height: 40px; --n-font-size: 15px; --n-color: rgba(255, 255, 255, 1); --n-text-color: rgba(52, 64, 84, 1); --n-arrow-color: rgba(194, 194, 194, 1); --n-box-shadow-focus: 0 0 0 2px rgba(21, 94, 239, 0.2);">
           <div class="hr-base-selection-tags" tabindex="0">
             ${tagHtml}
@@ -234,6 +234,7 @@ export class UserDropdown {
    */
   _createElement() {
     const wrapper = document.createElement('div');
+    wrapper.style.width = '100%';
     wrapper.innerHTML = this._render();
     return wrapper;
   }
