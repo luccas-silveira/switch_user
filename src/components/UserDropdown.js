@@ -233,10 +233,10 @@ export class UserDropdown {
    * Cria elemento DOM
    */
   _createElement() {
-    const wrapper = document.createElement('div');
-    wrapper.style.width = '100%';
-    wrapper.innerHTML = this._render();
-    return wrapper;
+    const temp = document.createElement('div');
+    temp.innerHTML = this._render();
+    // Retorna o elemento .hr-select diretamente, sem wrapper
+    return temp.firstElementChild;
   }
 
   /**
