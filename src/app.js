@@ -8,12 +8,20 @@
 
 import { UserDropdown } from './components/index.js';
 import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
+import { getOpportunityIdFromUrl } from './services/opportunityApi.js';
+import { watchSpaRouteChanges } from './utils/spa.js';
 
 // Location ID permitido
 const ALLOWED_LOCATION_ID = 'citQs4acsN1StzOEDuvj';
+const DROPDOWN_SELECTOR = '[data-component-id^="user-dropdown"]';
 
 // Instância do dropdown
 let dropdownInstance = null;
+let lastOpportunityId = null;
+let reinjectInProgress = false;
+let reinjectQueued = false;
+let initialTimerId = null;
+let routeWatcherStarted = false;
 
 /**
  * Log simples
@@ -27,7 +35,7 @@ function log(msg, data) {
  */
 function cleanupPreviousDropdowns() {
   // Remove qualquer dropdown anterior
-  const existingDropdowns = document.querySelectorAll('[data-component-id^="user-dropdown"]');
+  const existingDropdowns = document.querySelectorAll(DROPDOWN_SELECTOR);
   existingDropdowns.forEach(el => el.parentNode?.removeChild(el));
 
   // Restaura o elemento original se estiver escondido
@@ -35,6 +43,10 @@ function cleanupPreviousDropdowns() {
   if (original) {
     original.style.display = '';
   }
+}
+
+function hasInjectedDropdown() {
+  return Boolean(document.querySelector(DROPDOWN_SELECTOR));
 }
 
 /**
@@ -108,6 +120,71 @@ export async function startApp() {
   }
 }
 
+async function runReinject() {
+  reinjectInProgress = true;
+  try {
+    await startApp();
+  } catch (error) {
+    log('ERRO ao reinjetar:', error.message);
+  } finally {
+    reinjectInProgress = false;
+    if (reinjectQueued) {
+      reinjectQueued = false;
+      handleRouteChange();
+    }
+  }
+}
+
+function scheduleReinject() {
+  if (initialTimerId) {
+    clearTimeout(initialTimerId);
+    initialTimerId = null;
+  }
+
+  if (reinjectInProgress) {
+    reinjectQueued = true;
+    return;
+  }
+
+  runReinject();
+}
+
+function handleRouteChange() {
+  const locationId = getLocationIdFromUrl();
+  const opportunityId = getOpportunityIdFromUrl();
+
+  if (locationId !== ALLOWED_LOCATION_ID || !opportunityId) {
+    cleanupPreviousDropdowns();
+    lastOpportunityId = opportunityId;
+    return;
+  }
+
+  const opportunityChanged = opportunityId !== lastOpportunityId;
+  if (opportunityChanged) {
+    lastOpportunityId = opportunityId;
+  }
+
+  if (opportunityChanged || !hasInjectedDropdown()) {
+    scheduleReinject();
+  }
+}
+
+function scheduleInitialInjection() {
+  if (initialTimerId) return;
+  initialTimerId = setTimeout(() => {
+    initialTimerId = null;
+    handleRouteChange();
+  }, 1000);
+}
+
+function startRouteWatcher() {
+  if (routeWatcherStarted) return;
+  routeWatcherStarted = true;
+  watchSpaRouteChanges(() => {
+    handleRouteChange();
+  }, { pollInterval: 1000 });
+}
+
 /**
  * Obtém a instância do dropdown
  */
@@ -120,9 +197,8 @@ if (typeof window !== 'undefined') {
   window.SwitchUser = { start: startApp, getDropdown };
 
   // Aguarda um pouco para o GHL carregar
-  setTimeout(() => {
-    startApp();
-  }, 1000);
+  startRouteWatcher();
+  scheduleInitialInjection();
 }
 
 export default { startApp, getDropdown };

@@ -5,5 +5,6 @@
  */
 
 export * from './dom.js';
+export * from './spa.js';
 export { logger } from './logger.js';
 export { eventBus } from './events.js';
