@@ -47,6 +47,26 @@ function hasInjectedDropdown() {
   return Boolean(document.querySelector(DROPDOWN_SELECTOR));
 }
 
+/**
+ * Extrai o nome do proprietário atual do elemento #OpportunityOwner
+ * O elemento GHL tem uma tag com o nome do owner atual
+ */
+function getCurrentOwnerFromDOM(el) {
+  // Busca o texto da tag de seleção dentro do elemento
+  const tagContent = el.querySelector('.hr-tag__content');
+  if (tagContent) {
+    return tagContent.textContent?.trim() || null;
+  }
+
+  // Fallback: busca qualquer texto de seleção
+  const selectedText = el.querySelector('.hr-base-selection-tag-wrapper');
+  if (selectedText) {
+    return selectedText.textContent?.trim() || null;
+  }
+
+  return null;
+}
+
 function cleanupInjectedDropdowns() {
   document.querySelectorAll(DROPDOWN_SELECTOR).forEach(el => el.remove());
   const original = document.querySelector(TARGET_SELECTOR);
@@ -97,6 +117,18 @@ async function startApp() {
       return;
     }
 
+    // Extrair owner atual ANTES de esconder o elemento
+    const currentOwnerName = getCurrentOwnerFromDOM(el);
+    let currentOwner = null;
+
+    if (currentOwnerName && users.length > 0) {
+      // Encontra o usuário pelo nome
+      currentOwner = users.find(u => u.name === currentOwnerName);
+      if (currentOwner) {
+        logger.debug('Owner atual detectado: ' + currentOwnerName);
+      }
+    }
+
     // Remove dropdowns anteriores
     document.querySelectorAll(DROPDOWN_SELECTOR).forEach(e => e.remove());
     el.style.display = '';
@@ -107,6 +139,11 @@ async function startApp() {
       targetSelector: TARGET_SELECTOR,
       allowedLocationId: ALLOWED_LOCATION_ID,
     });
+
+    // Define o usuário selecionado se encontrado
+    if (currentOwner) {
+      dropdownInstance.setState({ selectedUser: currentOwner });
+    }
 
     dropdownInstance.on('user:selected', async (user) => {
       const opportunityId = getOpportunityId();
