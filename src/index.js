@@ -100,7 +100,7 @@ async function startApp() {
     }
 
     // Inicializa core (não bloqueia)
-    init({ debug: true, namespace: 'ui-injector' });
+    init({ debug: false, namespace: 'ui-injector' });
 
     // Usa cache ou prefetch já em andamento
     const usersPromise = usersCache
