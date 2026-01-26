@@ -27,6 +27,9 @@ function formatMessage(level, message) {
 
 /**
  * Logger principal
+ *
+ * Por padrão, apenas erros são exibidos.
+ * Para ver logs de debug/info/warn, habilite config.debug = true
  */
 export const logger = {
   /**
@@ -42,25 +45,31 @@ export const logger = {
   },
 
   /**
-   * Log informativo
+   * Log informativo (apenas se debug estiver habilitado)
    * @param {string} message
    * @param {...any} args
    */
   info(message, ...args) {
-    console.info(formatMessage('INFO', message), ...args);
+    const config = getConfig();
+    if (config.debug) {
+      console.info(formatMessage('INFO', message), ...args);
+    }
   },
 
   /**
-   * Log de aviso
+   * Log de aviso (apenas se debug estiver habilitado)
    * @param {string} message
    * @param {...any} args
    */
   warn(message, ...args) {
-    console.warn(formatMessage('WARN', message), ...args);
+    const config = getConfig();
+    if (config.debug) {
+      console.warn(formatMessage('WARN', message), ...args);
+    }
   },
 
   /**
-   * Log de erro
+   * Log de erro (sempre exibido)
    * @param {string} message
    * @param {...any} args
    */
@@ -79,7 +88,7 @@ export const logger = {
   },
 
   /**
-   * Agrupa logs em um grupo colapsável
+   * Agrupa logs em um grupo colapsável (apenas se debug estiver habilitado)
    * @param {string} label
    * @param {Function} fn
    */

@@ -154,6 +154,51 @@ export class UserDropdown {
   }
 
   /**
+   * Extrai o nome do owner atual do elemento original
+   */
+  _getOwnerNameFromElement(element) {
+    if (!element) return null;
+
+    const tagContent = element.querySelector('.hr-tag__content, .n-tag__content');
+    if (tagContent) {
+      const text = tagContent.textContent?.trim();
+      return text || null;
+    }
+
+    const selectionTag = element.querySelector('.hr-base-selection-tag-wrapper, .n-base-selection-tag-wrapper');
+    if (selectionTag) {
+      const text = selectionTag.textContent?.trim();
+      return text || null;
+    }
+
+    const placeholder = element.querySelector('.hr-base-selection-placeholder__inner, .n-base-selection-placeholder__inner');
+    if (placeholder) {
+      return null;
+    }
+
+    const fallbackText = element.textContent?.trim();
+    return fallbackText || null;
+  }
+
+  /**
+   * Inicializa a selecao com base no DOM, se ainda nao houver uma selecionada
+   */
+  _initializeSelectionFromElement(element) {
+    if (this.state.selectedUser) return;
+
+    const ownerName = this._getOwnerNameFromElement(element);
+    if (!ownerName) return;
+
+    const matchedUser = this.state.users.find(user => user.name === ownerName);
+    if (matchedUser) {
+      this.setState({ selectedUser: matchedUser });
+      return;
+    }
+
+    this.setState({ selectedUser: { id: null, name: ownerName } });
+  }
+
+  /**
    * Renderiza o HTML do componente usando classes GHL
    */
   _render() {
@@ -419,6 +464,8 @@ export class UserDropdown {
         logger.error(`Elemento não encontrado: ${this.targetSelector}`);
         return null;
       }
+
+      this._initializeSelectionFromElement(this.originalElement);
 
       // Oculta o elemento original
       this.originalElement.style.display = 'none';

@@ -12,6 +12,15 @@ const API_CONFIG = {
   version: '2021-07-28',
 };
 
+function getHeaders() {
+  return {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${API_CONFIG.token}`,
+    'Version': API_CONFIG.version,
+  };
+}
+
 /**
  * Atualiza o proprietário (owner) de uma oportunidade
  *
@@ -31,12 +40,7 @@ const API_CONFIG = {
 export async function updateOpportunityOwner(opportunityId, userId) {
   const url = `${API_CONFIG.baseUrl}/opportunities/${opportunityId}`;
 
-  const headers = {
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${API_CONFIG.token}`,
-    'Version': API_CONFIG.version,
-  };
+  const headers = getHeaders();
 
   const payload = {
     assignedTo: userId,
@@ -49,6 +53,93 @@ export async function updateOpportunityOwner(opportunityId, userId) {
   });
 
   const data = await response.json();
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data: data,
+  };
+}
+
+function extractContactId(data) {
+  if (!data) return null;
+
+  const opportunity = data.opportunity || data.opportunities?.[0] || data;
+  return (
+    opportunity?.contactId ||
+    opportunity?.contact?.id ||
+    data?.contactId ||
+    data?.contact?.id ||
+    null
+  );
+}
+
+/**
+ * Busca uma oportunidade pelo ID
+ *
+ * @param {string} opportunityId
+ * @returns {Promise<Object>} Resposta da API
+ */
+export async function fetchOpportunityById(opportunityId) {
+  if (!opportunityId) {
+    return { ok: false, status: 0, data: { message: 'Opportunity ID ausente' } };
+  }
+
+  const url = `${API_CONFIG.baseUrl}/opportunities/${opportunityId}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: getHeaders(),
+  });
+
+  const data = await response.json();
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    data: data,
+  };
+}
+
+/**
+ * Busca o contactId associado a uma oportunidade
+ *
+ * @param {string} opportunityId
+ * @returns {Promise<string|null>}
+ */
+export async function getOpportunityContactId(opportunityId) {
+  const result = await fetchOpportunityById(opportunityId);
+  if (!result.ok) return null;
+  return extractContactId(result.data);
+}
+
+/**
+ * Adiciona um seguidor à oportunidade
+ *
+ * @param {string} opportunityId
+ * @param {string} userId
+ * @returns {Promise<Object>} Resposta da API
+ */
+export async function addOpportunityFollower(opportunityId, userId) {
+  if (!opportunityId || !userId) {
+    return { ok: false, status: 0, data: { message: 'opportunityId ou userId ausente' } };
+  }
+
+  const url = `${API_CONFIG.baseUrl}/opportunities/${opportunityId}/followers`;
+  const payload = { followers: [userId] };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = null;
+  }
 
   return {
     ok: response.ok,
@@ -101,6 +192,9 @@ export function getOpportunityId() {
 
 export default {
   updateOpportunityOwner,
+  fetchOpportunityById,
+  getOpportunityContactId,
+  addOpportunityFollower,
   getOpportunityIdFromUrl,
   getOpportunityIdFromDOM,
   getOpportunityId,

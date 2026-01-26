@@ -24,10 +24,10 @@ let initialTimerId = null;
 let routeWatcherStarted = false;
 
 /**
- * Log simples
+ * Log simples (desabilitado em produção)
  */
 function log(msg, data) {
-  console.log(`[SwitchUser] ${msg}`, data || '');
+  // Logs desabilitados - apenas erros são exibidos via logger.error()
 }
 
 /**

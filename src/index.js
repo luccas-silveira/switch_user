@@ -6,11 +6,13 @@
 
 import { UserDropdown } from './components/index.js';
 import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
-import { getOpportunityId, updateOpportunityOwner } from './services/opportunityApi.js';
+import { addContactFollower } from './services/contactApi.js';
+import { getOpportunityId, getOpportunityContactId, updateOpportunityOwner, addOpportunityFollower } from './services/opportunityApi.js';
 import { init } from './core/index.js';
 import { logger } from './utils/index.js';
 
 const ALLOWED_LOCATION_ID = 'citQs4acsN1StzOEDuvj';
+const DAIANE_BAYER_NAME = 'Daiane Bayer';
 const TARGET_SELECTOR = '#OpportunityOwner';
 const DROPDOWN_SELECTOR = '[data-component-id^="user-dropdown"]';
 
@@ -53,18 +55,25 @@ function hasInjectedDropdown() {
  */
 function getCurrentOwnerFromDOM(el) {
   // Busca o texto da tag de seleção dentro do elemento
-  const tagContent = el.querySelector('.hr-tag__content');
+  const tagContent = el.querySelector('.hr-tag__content, .n-tag__content');
   if (tagContent) {
     return tagContent.textContent?.trim() || null;
   }
 
   // Fallback: busca qualquer texto de seleção
-  const selectedText = el.querySelector('.hr-base-selection-tag-wrapper');
+  const selectedText = el.querySelector('.hr-base-selection-tag-wrapper, .n-base-selection-tag-wrapper');
   if (selectedText) {
     return selectedText.textContent?.trim() || null;
   }
 
-  return null;
+  // Evita placeholder vazio
+  const placeholder = el.querySelector('.hr-base-selection-placeholder__inner, .n-base-selection-placeholder__inner');
+  if (placeholder) {
+    return null;
+  }
+
+  const fallbackText = el.textContent?.trim();
+  return fallbackText || null;
 }
 
 function cleanupInjectedDropdowns() {
@@ -118,7 +127,7 @@ async function startApp() {
     }
 
     // Extrair owner atual ANTES de esconder o elemento
-    const currentOwnerName = getCurrentOwnerFromDOM(el);
+    let currentOwnerName = getCurrentOwnerFromDOM(el);
     let currentOwner = null;
 
     if (currentOwnerName && users.length > 0) {
@@ -152,17 +161,63 @@ async function startApp() {
         return;
       }
 
+      const previousOwnerName = currentOwnerName;
+      const shouldAddDaianeFollower = (
+        previousOwnerName === DAIANE_BAYER_NAME &&
+        user.name !== DAIANE_BAYER_NAME
+      );
+
       logger.info('Atualizando owner para: ' + user.name);
 
       try {
         const result = await updateOpportunityOwner(opportunityId, user.id);
         if (result.ok) {
           logger.info('Owner atualizado com sucesso');
+          currentOwnerName = user.name;
+
+          // Adicionar seguidor após atualizar owner (com delay para garantir processamento)
+          if (shouldAddDaianeFollower) {
+            logger.info('Aguardando 1.5s antes de adicionar seguidora...');
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            const daianeUser = users.find(u => u.name === DAIANE_BAYER_NAME);
+            if (!daianeUser || !daianeUser.id) {
+              logger.warn('Usuário Daiane Bayer não encontrado para seguidora');
+            } else {
+              // 1. Adicionar seguidor na OPORTUNIDADE
+              logger.info('Adicionando seguidora na oportunidade: ' + opportunityId);
+              const oppFollowerResult = await addOpportunityFollower(opportunityId, daianeUser.id);
+              if (oppFollowerResult.ok) {
+                logger.info('Daiane Bayer adicionada como seguidora da oportunidade!');
+              } else {
+                logger.error('Falha ao adicionar seguidora na oportunidade. Status: ' + oppFollowerResult.status);
+                logger.error('Resposta: ' + JSON.stringify(oppFollowerResult.data));
+              }
+
+              // 2. Adicionar seguidor no CONTATO
+              logger.info('Buscando contactId para oportunidade: ' + opportunityId);
+              const contactId = await getOpportunityContactId(opportunityId);
+              if (!contactId) {
+                logger.warn('Contact ID não encontrado; seguidora não adicionada ao contato');
+              } else {
+                logger.info('Adicionando seguidora ao contato: ' + contactId);
+                const contactFollowerResult = await addContactFollower(contactId, daianeUser.id);
+                if (contactFollowerResult.ok) {
+                  logger.info('Daiane Bayer adicionada como seguidora do contato!');
+                } else {
+                  logger.error('Falha ao adicionar seguidora no contato. Status: ' + contactFollowerResult.status);
+                  logger.error('Resposta: ' + JSON.stringify(contactFollowerResult.data));
+                }
+              }
+            }
+          }
         } else {
-          logger.error('Falha ao atualizar: ' + JSON.stringify(result.data));
+          logger.error('Falha ao atualizar owner. Status: ' + result.status);
+          logger.error('Resposta: ' + JSON.stringify(result.data));
         }
       } catch (err) {
         logger.error('Erro ao atualizar owner: ' + err.message);
+        console.error(err);
       }
     });
 
