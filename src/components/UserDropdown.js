@@ -490,6 +490,30 @@ export class UserDropdown {
   }
 
   /**
+   * Monta o componente dentro de um container existente (sem substituir elemento nativo)
+   * @param {HTMLElement} container - elemento onde o dropdown será appendado
+   * @returns {HTMLElement|null}
+   */
+  mountInto(container) {
+    try {
+      if (!container) {
+        logger.error('UserDropdown.mountInto: container não fornecido');
+        return null;
+      }
+      this.element = this._createElement();
+      this.element.style.minWidth = '180px';
+      container.appendChild(this.element);
+      this._mounted = true;
+      this._bindEvents();
+      logger.debug(`UserDropdown montado dentro de container`);
+      return this.element;
+    } catch (error) {
+      logger.error(`Erro ao montar UserDropdown em container: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Desmonta o componente
    */
   unmount() {
