@@ -8,7 +8,7 @@
 
 import { UserDropdown } from './components/index.js';
 import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
-import { getOpportunityIdFromUrl } from './services/opportunityApi.js';
+import { getOpportunityIdFromUrl, updateOpportunityOwner } from './services/opportunityApi.js';
 import { watchSpaRouteChanges } from './utils/spa.js';
 
 // Location ID permitido
@@ -105,6 +105,23 @@ export async function startApp() {
     // 6. Escuta seleção
     dropdownInstance.on('user:selected', (user) => {
       log('Selecionado:', user.name);
+      const opportunityId = getOpportunityIdFromUrl();
+      if (!opportunityId) {
+        log('ERRO: OpportunityId não encontrado na URL');
+        return;
+      }
+
+      updateOpportunityOwner(opportunityId, user.id)
+        .then((result) => {
+          if (!result.ok) {
+            log(`ERRO ao atualizar oportunidade: ${result.status}`, result.data);
+            return;
+          }
+          log('Oportunidade atualizada:', opportunityId);
+        })
+        .catch((error) => {
+          log('ERRO ao atualizar oportunidade:', error.message);
+        });
     });
 
     // 7. Monta
