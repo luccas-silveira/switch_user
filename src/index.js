@@ -82,6 +82,19 @@ function getConversationId() {
   }
 }
 
+function getDirectContactId() {
+  try {
+    // Tenta via route helper (página de detalhe de contato)
+    const route = window.AppUtils?.RouteHelper?.getCurrentRoute?.();
+    const params = route?.params || {};
+    if (params.id && typeof params.id === 'string' && params.id.length > 10) return params.id;
+    if (params.contactId) return params.contactId;
+  } catch (_) {}
+  // Fallback: extrai do path da URL — /contacts/detail/{id}
+  const m = window.location.pathname.match(/\/contacts\/detail\/([a-zA-Z0-9_-]{10,})/);
+  return m ? m[1] : null;
+}
+
 // ─── Injeção ──────────────────────────────────────────────────────────────────
 
 async function inject(conversationId, contactId, currentAssignedTo, users) {
@@ -140,7 +153,7 @@ async function inject(conversationId, contactId, currentAssignedTo, users) {
   });
 
   dropdownInstance.mountInto(wrapper);
-  logger.info(`Dropdown injetado no header (conversa: ${conversationId}, contato: ${contactId})`);
+  logger.info(`Dropdown injetado no header (contexto: ${conversationId}, contato: ${contactId})`);
 }
 
 // ─── Handler de rota ──────────────────────────────────────────────────────────
@@ -157,31 +170,39 @@ async function handleRoute() {
       return;
     }
 
-    // 2. Extrai conversationId da rota atual
+    // 2. Determina contexto: conversa ou detalhe de contato
     const conversationId = getConversationId();
-    if (!conversationId) {
+    const directContactId = conversationId ? null : getDirectContactId();
+
+    if (!conversationId && !directContactId) {
       cleanupDropdown();
       lastConversationId = null;
       return;
     }
 
     // 3. Evita reinjeção desnecessária
-    if (conversationId === lastConversationId && document.getElementById(WRAPPER_ID)) return;
-    lastConversationId = conversationId;
+    const contextKey = conversationId || ('contact:' + directContactId);
+    if (contextKey === lastConversationId && document.getElementById(WRAPPER_ID)) return;
+    lastConversationId = contextKey;
 
     try {
-      // 4. Busca contactId via conversations API
-      const convResult = await fetchConversationById(conversationId);
-      if (!convResult.ok) {
-        logger.error(`GET /conversations/${conversationId} falhou: ${convResult.status}`);
-        return;
-      }
-      const contactId = convResult.data?.conversation?.contactId
-        || convResult.data?.contactId
-        || null;
-      if (!contactId) {
-        logger.error('contactId não encontrado na resposta da conversa');
-        return;
+      // 4. Resolve o contactId
+      let contactId;
+      if (conversationId) {
+        const convResult = await fetchConversationById(conversationId);
+        if (!convResult.ok) {
+          logger.error(`GET /conversations/${conversationId} falhou: ${convResult.status}`);
+          return;
+        }
+        contactId = convResult.data?.conversation?.contactId
+          || convResult.data?.contactId
+          || null;
+        if (!contactId) {
+          logger.error('contactId não encontrado na resposta da conversa');
+          return;
+        }
+      } else {
+        contactId = directContactId;
       }
 
       // 5. Busca owner atual do contato
@@ -198,7 +219,7 @@ async function handleRoute() {
       }
 
       // 7. Injeta o dropdown
-      await inject(conversationId, contactId, currentAssignedTo, users);
+      await inject(contextKey, contactId, currentAssignedTo, users);
     } catch (err) {
       logger.error('Erro em handleRoute: ' + err.message);
     }
