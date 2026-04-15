@@ -69,17 +69,76 @@ function hasDropdown() {
 
 function getOwnerNameFromElement(el) {
   if (!el) return null;
+  // Multi-select view (painel lateral de oportunidade)
   const tagContent = el.querySelector('.hr-tag__content, .n-tag__content');
   if (tagContent) return tagContent.textContent?.trim() || null;
   const selectionTag = el.querySelector('.hr-base-selection-tag-wrapper, .n-base-selection-tag-wrapper');
   if (selectionTag) return selectionTag.textContent?.trim() || null;
+  // Single-select view (modal de oportunidade a partir de conversas/contatos)
+  const labelRender = el.querySelector('.hr-base-selection-label__render-label, .n-base-selection-label__render-label');
+  if (labelRender) {
+    const overlay = labelRender.querySelector('.hr-base-selection-overlay__wrapper, .n-base-selection-overlay__wrapper');
+    const text = (overlay || labelRender).textContent?.trim();
+    if (text) return text;
+  }
+  // Placeholder = sem seleção
   const placeholder = el.querySelector('.hr-base-selection-placeholder__inner, .n-base-selection-placeholder__inner');
   if (placeholder) return null;
   return el.textContent?.trim() || null;
 }
 
-function getOpportunityIdFromPath(path) {
-  if (!path) return null;
+// ─── Captura de opportunityId ──────────────────────────────────────────────────
+//
+// O opportunityId nem sempre está no path da URL do GHL. Em views como o modal
+// de oportunidade aberto dentro de uma conversa, o path referencia o conversationId.
+// Para contornar isso, interceptamos requisições HTTP do GHL que carregam os dados
+// da oportunidade — a URL delas contém o ID.
+
+let capturedOpportunityId = null;
+const OPP_URL_REGEX = /\/opportunities\/(?!list(?:\/|$|\?|#))([a-zA-Z0-9_-]+)(?:\/|$|\?|#)/;
+
+function extractOpportunityIdFromUrl(url) {
+  if (typeof url !== 'string' || !url) return null;
+  const match = url.match(OPP_URL_REGEX);
+  return match ? match[1] : null;
+}
+
+function startNetworkInterceptor() {
+  // fetch
+  if (typeof window.fetch === 'function' && !window.fetch.__switchUserPatched) {
+    const origFetch = window.fetch.bind(window);
+    const patched = function(input, init) {
+      try {
+        const url = typeof input === 'string' ? input : (input?.url || '');
+        const id = extractOpportunityIdFromUrl(url);
+        if (id) capturedOpportunityId = id;
+      } catch (_) { /* never break the host page */ }
+      return origFetch(input, init);
+    };
+    patched.__switchUserPatched = true;
+    window.fetch = patched;
+  }
+
+  // XHR
+  if (XMLHttpRequest?.prototype?.open && !XMLHttpRequest.prototype.open.__switchUserPatched) {
+    const origOpen = XMLHttpRequest.prototype.open;
+    const patchedOpen = function(method, url, ...rest) {
+      try {
+        if (typeof url === 'string') {
+          const id = extractOpportunityIdFromUrl(url);
+          if (id) capturedOpportunityId = id;
+        }
+      } catch (_) { /* never break the host page */ }
+      return origOpen.call(this, method, url, ...rest);
+    };
+    patchedOpen.__switchUserPatched = true;
+    XMLHttpRequest.prototype.open = patchedOpen;
+  }
+}
+
+function getOpportunityIdFromPath() {
+  const route = window.AppUtils?.RouteHelper?.getCurrentRoute?.();
+  const path = route?.path || '';
   const m1 = path.match(/\/opportunities\/list\/([^\/\?]+)/);
   if (m1) return m1[1];
   const m2 = path.match(/\/opportunities\/([^\/\?]+)/);
@@ -87,32 +146,23 @@ function getOpportunityIdFromPath(path) {
   return null;
 }
 
-// ─── Validação de rota via AppUtils ───────────────────────────────────────────
+function getCurrentOpportunityId() {
+  // Prioridade 1: path URL (views tradicionais de oportunidade)
+  const fromPath = getOpportunityIdFromPath();
+  if (fromPath) return fromPath;
+  // Prioridade 2: capturado via interceptação de rede
+  return capturedOpportunityId;
+}
 
-async function validateRoute() {
-  if (!window.AppUtils?.Utilities?.getCurrentLocation) {
-    logger.debug('AppUtils ainda não disponível');
-    return null;
-  }
-
-  let location;
+async function getAllowedLocationId() {
+  if (!window.AppUtils?.Utilities?.getCurrentLocation) return null;
   try {
-    location = await window.AppUtils.Utilities.getCurrentLocation();
+    const loc = await window.AppUtils.Utilities.getCurrentLocation();
+    return loc?.id || null;
   } catch (err) {
     logger.error('Erro ao obter location: ' + err.message);
     return null;
   }
-
-  if (!location?.id || location.id !== CONFIG.allowedLocationId) {
-    return null;
-  }
-
-  const route = window.AppUtils.RouteHelper.getCurrentRoute();
-  const opportunityId = getOpportunityIdFromPath(route?.path);
-
-  if (!opportunityId) return null;
-
-  return { locationId: location.id, opportunityId };
 }
 
 // ─── Regra da seguidora ────────────────────────────────────────────────────────
@@ -294,19 +344,38 @@ function startDomObserver() {
   domObserver.observe(document.body, { childList: true, subtree: true });
 }
 
-// ─── Handler de rota ───────────────────────────────────────────────────────────
+// ─── Handler de rota (DOM-driven) ──────────────────────────────────────────────
+//
+// Estratégia: validar a location e verificar a presença de #OpportunityOwner no
+// DOM. O opportunityId é extraído em múltiplas fontes (path URL + captura de
+// rede). Esse handler é chamado tanto por routeLoaded/routeChangeEvent quanto
+// pelo MutationObserver.
 
 async function handleRoute() {
-  const routeData = await validateRoute();
-
-  if (!routeData) {
+  // 1. Valida location via AppUtils
+  const locationId = await getAllowedLocationId();
+  if (!locationId || locationId !== CONFIG.allowedLocationId) {
     if (hasDropdown()) cleanupDropdowns();
     lastOpportunityId = null;
     return;
   }
 
-  const { opportunityId } = routeData;
+  // 2. Elemento target precisa existir no DOM
+  const ownerEl = document.querySelector(TARGET_SELECTOR);
+  if (!ownerEl) {
+    if (hasDropdown()) cleanupDropdowns();
+    lastOpportunityId = null;
+    return;
+  }
 
+  // 3. Obtém opportunityId (path ou rede capturada)
+  const opportunityId = getCurrentOpportunityId();
+  if (!opportunityId) {
+    logger.debug('#OpportunityOwner presente mas opportunityId ainda não detectado');
+    return;
+  }
+
+  // 4. Skip se já injetado com o mesmo ID
   if (opportunityId === lastOpportunityId && hasDropdown()) return;
 
   lastOpportunityId = opportunityId;
@@ -316,7 +385,11 @@ async function handleRoute() {
 // ─── Auto-inicialização ────────────────────────────────────────────────────────
 
 if (typeof window !== 'undefined') {
-  // Shim: código custom do GHL pode chamar manageGhlUiOverrides — evita crash
+  // 1. Intercepta fetch/XHR ANTES de qualquer outra coisa — precisa pegar as
+  //    requisições que o GHL faz ao carregar oportunidades para extrair o ID
+  startNetworkInterceptor();
+
+  // 2. Shim: código custom do GHL pode chamar manageGhlUiOverrides — evita crash
   if (typeof window.manageGhlUiOverrides !== 'function') {
     window.manageGhlUiOverrides = () => {};
   }
