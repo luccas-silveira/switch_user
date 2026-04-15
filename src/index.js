@@ -88,12 +88,16 @@ function getDirectContactId() {
     // Tenta via route helper (página de detalhe de contato)
     const route = window.AppUtils?.RouteHelper?.getCurrentRoute?.();
     const params = route?.params || {};
-    if (params.id && typeof params.id === 'string' && params.id.length > 10) return params.id;
+    // contactId / contact_id têm prioridade (não ambíguos)
     if (params.contactId) return params.contactId;
+    if (params.contact_id) return params.contact_id;
+    // params.id pode ser o locationId — excluir explicitamente
+    if (params.id && params.id !== CONFIG.allowedLocationId && params.id.length >= 15) return params.id;
   } catch (_) {}
-  // Fallback: extrai do path da URL — /contacts/detail/{id}
-  const m = window.location.pathname.match(/\/contacts\/detail\/([a-zA-Z0-9_-]{10,})/);
-  return m ? m[1] : null;
+  // Fallback: extrai do path da URL — /contacts/detail/{id} OU /contacts/{id}
+  const m = window.location.pathname.match(/\/contacts\/(?:detail\/)?([a-zA-Z0-9_-]{15,})(?:\/|$|\?|#)/);
+  if (m && m[1] !== CONFIG.allowedLocationId) return m[1];
+  return null;
 }
 
 // ─── Injeção ──────────────────────────────────────────────────────────────────
@@ -144,7 +148,7 @@ async function inject(conversationId, contactId, currentAssignedTo, users) {
     try {
       const result = await updateContactOwner(contactId, selectedUser.id);
       if (!result.ok) {
-        logger.error('Falha ao atualizar owner do contato. Status: ' + result.status);
+        logger.error(`Falha ao atualizar owner (contactId: ${contactId}). Status: ${result.status}`);
         return;
       }
       logger.info('Owner do contato atualizado: ' + selectedUser.name);
