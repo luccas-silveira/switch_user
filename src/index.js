@@ -50,6 +50,7 @@ function getUsers() {
 let lastConversationId = null;
 let dropdownInstance = null;
 let isHandlingRoute = false;
+let pendingHandleRoute = false;
 
 // ─── Utilitários ──────────────────────────────────────────────────────────────
 
@@ -159,8 +160,12 @@ async function inject(conversationId, contactId, currentAssignedTo, users) {
 // ─── Handler de rota ──────────────────────────────────────────────────────────
 
 async function handleRoute() {
-  if (isHandlingRoute) return;
+  if (isHandlingRoute) {
+    pendingHandleRoute = true;
+    return;
+  }
   isHandlingRoute = true;
+  pendingHandleRoute = false;
   try {
     // 1. Valida location
     const locationId = await getAllowedLocationId();
@@ -225,6 +230,10 @@ async function handleRoute() {
     }
   } finally {
     isHandlingRoute = false;
+    if (pendingHandleRoute) {
+      pendingHandleRoute = false;
+      setTimeout(handleRoute, 0);
+    }
   }
 }
 
@@ -239,8 +248,18 @@ if (typeof window !== 'undefined') {
 
   startUsersPrefetch();
 
-  window.addEventListener('routeLoaded', handleRoute);
-  window.addEventListener('routeChangeEvent', handleRoute);
+  // Delay de 100ms para GHL atualizar os params de rota antes de ler
+  window.addEventListener('routeLoaded', () => setTimeout(handleRoute, 100));
+  window.addEventListener('routeChangeEvent', () => setTimeout(handleRoute, 100));
+
+  // Poller de fallback: reinjecta se o wrapper sumiu (GHL re-renderiza o painel
+  // sem disparar eventos de rota em algumas navegações)
+  setInterval(() => {
+    if (isHandlingRoute || pendingHandleRoute) return;
+    if (!document.getElementById(WRAPPER_ID) && document.querySelector('[data-testid="CENTRALPANEL_NAME"]')) {
+      handleRoute();
+    }
+  }, 800);
 
   handleRoute();
 }
