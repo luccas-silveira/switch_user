@@ -1,320 +1,268 @@
 /**
- * UI Injector - Entry Point Principal
+ * Switch User — Entry Point
  *
- * Auto-inicializa o dropdown de usuários no GoHighLevel
+ * Injeta dropdown customizado de owner em páginas de oportunidades do GHL.
+ * Usa as APIs oficiais AppUtils para detecção de rota e validação de location.
  */
 
-import { UserDropdown } from './components/index.js';
-import { fetchUsersByLocation, getLocationIdFromUrl } from './services/ghlApi.js';
+import { UserDropdown } from './components/UserDropdown.js';
+import { fetchUsersByLocation } from './services/ghlApi.js';
+import { updateOpportunityOwner, getOpportunityContactId, addOpportunityFollower } from './services/opportunityApi.js';
 import { addContactFollower } from './services/contactApi.js';
-import { getOpportunityId, getOpportunityContactId, updateOpportunityOwner, addOpportunityFollower } from './services/opportunityApi.js';
-import { init } from './core/index.js';
-import { logger } from './utils/index.js';
+import { waitForElement } from './utils/dom.js';
+import logger from './utils/logger.js';
 
-const ALLOWED_LOCATION_ID = 'citQs4acsN1StzOEDuvj';
-const DAIANE_BAYER_NAME = 'Daiane Bayer';
+// ─── Configuração ──────────────────────────────────────────────────────────────
+
+const CONFIG = {
+  allowedLocationId: 'citQs4acsN1StzOEDuvj',
+  followerOnOwnerChangeFrom: 'Daiane Bayer', // null desativa a regra
+};
+
 const TARGET_SELECTOR = '#OpportunityOwner';
 const DROPDOWN_SELECTOR = '[data-component-id^="user-dropdown"]';
 
-let dropdownInstance = null;
-let reinjectInProgress = false;
-let reinjectQueued = false;
-let domObserver = null;
+// ─── Cache de usuários ─────────────────────────────────────────────────────────
 
-// Cache de usuários e prefetch imediato
 let usersCache = null;
 let usersFetchPromise = null;
 
-// Inicia prefetch imediatamente se estiver na location correta
 function startUsersPrefetch() {
-  const locationId = getLocationIdFromUrl();
-  if (locationId === ALLOWED_LOCATION_ID && !usersFetchPromise) {
-    logger.debug('Prefetch de usuários iniciado...');
-    usersFetchPromise = fetchUsersByLocation(ALLOWED_LOCATION_ID)
-      .then(users => {
-        usersCache = users;
-        logger.info(users.length + ' usuários pré-carregados');
-        return users;
-      })
-      .catch(err => {
-        logger.error('Erro no prefetch: ' + err.message);
-        usersFetchPromise = null;
-        return [];
-      });
-  }
+  if (usersFetchPromise) return usersFetchPromise;
+  usersFetchPromise = fetchUsersByLocation(CONFIG.allowedLocationId)
+    .then(users => {
+      usersCache = users;
+      logger.info(`${users.length} usuários pré-carregados`);
+      return users;
+    })
+    .catch(err => {
+      logger.error('Erro no prefetch: ' + err.message);
+      usersFetchPromise = null;
+      return [];
+    });
   return usersFetchPromise;
 }
 
-function hasInjectedDropdown() {
+function getUsers() {
+  return usersCache ? Promise.resolve(usersCache) : startUsersPrefetch();
+}
+
+// ─── Estado de injeção ─────────────────────────────────────────────────────────
+
+let dropdownInstance = null;
+let lastOpportunityId = null;
+let reinjectInProgress = false;
+let reinjectQueued = false;
+
+// ─── Utilitários DOM ───────────────────────────────────────────────────────────
+
+function cleanupDropdowns() {
+  document.querySelectorAll(DROPDOWN_SELECTOR).forEach(el => el.remove());
+  const original = document.querySelector(TARGET_SELECTOR);
+  if (original) original.style.display = '';
+  dropdownInstance = null;
+}
+
+function hasDropdown() {
   return Boolean(document.querySelector(DROPDOWN_SELECTOR));
 }
 
-/**
- * Extrai o nome do proprietário atual do elemento #OpportunityOwner
- * O elemento GHL tem uma tag com o nome do owner atual
- */
-function getCurrentOwnerFromDOM(el) {
-  // Busca o texto da tag de seleção dentro do elemento
+function getOwnerNameFromElement(el) {
+  if (!el) return null;
   const tagContent = el.querySelector('.hr-tag__content, .n-tag__content');
-  if (tagContent) {
-    return tagContent.textContent?.trim() || null;
-  }
-
-  // Fallback: busca qualquer texto de seleção
-  const selectedText = el.querySelector('.hr-base-selection-tag-wrapper, .n-base-selection-tag-wrapper');
-  if (selectedText) {
-    return selectedText.textContent?.trim() || null;
-  }
-
-  // Evita placeholder vazio
+  if (tagContent) return tagContent.textContent?.trim() || null;
+  const selectionTag = el.querySelector('.hr-base-selection-tag-wrapper, .n-base-selection-tag-wrapper');
+  if (selectionTag) return selectionTag.textContent?.trim() || null;
   const placeholder = el.querySelector('.hr-base-selection-placeholder__inner, .n-base-selection-placeholder__inner');
-  if (placeholder) {
+  if (placeholder) return null;
+  return el.textContent?.trim() || null;
+}
+
+function getOpportunityIdFromPath(path) {
+  const match = (path || '').match(/\/opportunities\/list\/([^\/\?]+)/);
+  return match ? match[1] : null;
+}
+
+// ─── Validação de rota via AppUtils ───────────────────────────────────────────
+
+async function validateRoute() {
+  if (!window.AppUtils?.Utilities?.getCurrentLocation) {
+    logger.debug('AppUtils ainda não disponível');
     return null;
   }
 
-  const fallbackText = el.textContent?.trim();
-  return fallbackText || null;
+  let location;
+  try {
+    location = await window.AppUtils.Utilities.getCurrentLocation();
+  } catch (err) {
+    logger.error('Erro ao obter location: ' + err.message);
+    return null;
+  }
+
+  if (!location?.id || location.id !== CONFIG.allowedLocationId) {
+    return null;
+  }
+
+  const route = window.AppUtils.RouteHelper.getCurrentRoute();
+  const opportunityId = getOpportunityIdFromPath(route?.path);
+
+  if (!opportunityId) return null;
+
+  return { locationId: location.id, opportunityId };
 }
 
-function cleanupInjectedDropdowns() {
-  document.querySelectorAll(DROPDOWN_SELECTOR).forEach(el => el.remove());
-  const original = document.querySelector(TARGET_SELECTOR);
-  if (original) {
-    original.style.display = '';
+// ─── Regra da seguidora ────────────────────────────────────────────────────────
+
+async function applyFollowerRule(opportunityId, users) {
+  const followerUser = users.find(u => u.name === CONFIG.followerOnOwnerChangeFrom);
+  if (!followerUser) {
+    logger.warn(`Usuário "${CONFIG.followerOnOwnerChangeFrom}" não encontrado na lista`);
+    return;
+  }
+
+  logger.info('Aguardando 1.5s antes de adicionar seguidora...');
+  await new Promise(resolve => setTimeout(resolve, 1500));
+
+  const oppResult = await addOpportunityFollower(opportunityId, followerUser.id);
+  if (oppResult.ok) {
+    logger.info(`${CONFIG.followerOnOwnerChangeFrom} adicionada como seguidora da oportunidade`);
+  } else {
+    logger.error('Falha ao adicionar seguidora na oportunidade. Status: ' + oppResult.status);
+  }
+
+  const contactId = await getOpportunityContactId(opportunityId);
+  if (!contactId) {
+    logger.warn('Contact ID não encontrado; seguidora não adicionada ao contato');
+    return;
+  }
+
+  const contactResult = await addContactFollower(contactId, followerUser.id);
+  if (contactResult.ok) {
+    logger.info(`${CONFIG.followerOnOwnerChangeFrom} adicionada como seguidora do contato`);
+  } else {
+    logger.error('Falha ao adicionar seguidora no contato. Status: ' + contactResult.status);
   }
 }
 
-function getDropdown() {
-  return dropdownInstance;
-}
+// ─── Injeção do dropdown ───────────────────────────────────────────────────────
 
-async function startApp() {
-  try {
-    logger.info('Iniciando Switch User...');
+async function inject(opportunityId, users) {
+  const el = await waitForElement(TARGET_SELECTOR, { timeout: 5000 });
+  if (!el) {
+    logger.error(`${TARGET_SELECTOR} não encontrado após 5s`);
+    return;
+  }
 
-    // Verifica location
-    const locationId = getLocationIdFromUrl();
-    if (locationId !== ALLOWED_LOCATION_ID) {
-      logger.debug('Location não permitida: ' + locationId);
-      return;
-    }
+  // Lê owner atual ANTES de fazer cleanup (o cleanup não altera o conteúdo do elemento)
+  let currentOwnerName = getOwnerNameFromElement(el);
+  const currentOwner = currentOwnerName
+    ? (users.find(u => u.name === currentOwnerName) || { id: null, name: currentOwnerName })
+    : null;
 
-    // Inicializa core (não bloqueia)
-    init({ debug: false, namespace: 'ui-injector' });
+  cleanupDropdowns();
 
-    // Usa cache ou prefetch já em andamento
-    const usersPromise = usersCache
-      ? Promise.resolve(usersCache)
-      : usersFetchPromise || startUsersPrefetch();
+  dropdownInstance = new UserDropdown({
+    users,
+    targetSelector: TARGET_SELECTOR,
+    allowedLocationId: CONFIG.allowedLocationId,
+  });
 
-    const elementPromise = (async () => {
-      let el = document.querySelector(TARGET_SELECTOR);
-      let tries = 0;
-      while (!el && tries < 100) {
-        await new Promise(r => setTimeout(r, 50)); // 50ms ao invés de 200ms
-        el = document.querySelector(TARGET_SELECTOR);
-        tries++;
-      }
-      return el;
-    })();
+  if (currentOwner) {
+    dropdownInstance.setState({ selectedUser: currentOwner });
+  }
 
-    // Aguarda ambos em paralelo
-    const [users, el] = await Promise.all([usersPromise, elementPromise]);
+  dropdownInstance.on('user:selected', async (selectedUser) => {
+    const previousOwnerName = currentOwnerName;
 
-    if (!el) {
-      logger.error(`Elemento ${TARGET_SELECTOR} não encontrado`);
-      return;
-    }
-
-    // Extrair owner atual ANTES de esconder o elemento
-    let currentOwnerName = getCurrentOwnerFromDOM(el);
-    let currentOwner = null;
-
-    if (currentOwnerName && users.length > 0) {
-      // Encontra o usuário pelo nome
-      currentOwner = users.find(u => u.name === currentOwnerName);
-      if (currentOwner) {
-        logger.debug('Owner atual detectado: ' + currentOwnerName);
-      }
-    }
-
-    // Remove dropdowns anteriores
-    document.querySelectorAll(DROPDOWN_SELECTOR).forEach(e => e.remove());
-    el.style.display = '';
-
-    // Cria dropdown
-    dropdownInstance = new UserDropdown({
-      users: users,
-      targetSelector: TARGET_SELECTOR,
-      allowedLocationId: ALLOWED_LOCATION_ID,
-    });
-
-    // Define o usuário selecionado se encontrado
-    if (currentOwner) {
-      dropdownInstance.setState({ selectedUser: currentOwner });
-    }
-
-    dropdownInstance.on('user:selected', async (user) => {
-      const opportunityId = getOpportunityId();
-      if (!opportunityId) {
-        logger.error('Opportunity ID não encontrado');
+    try {
+      const result = await updateOpportunityOwner(opportunityId, selectedUser.id);
+      if (!result.ok) {
+        logger.error('Falha ao atualizar owner. Status: ' + result.status);
         return;
       }
+      logger.info('Owner atualizado: ' + selectedUser.name);
+      currentOwnerName = selectedUser.name;
 
-      const previousOwnerName = currentOwnerName;
-      const shouldAddDaianeFollower = (
-        previousOwnerName === DAIANE_BAYER_NAME &&
-        user.name !== DAIANE_BAYER_NAME
-      );
-
-      logger.info('Atualizando owner para: ' + user.name);
-
-      try {
-        const result = await updateOpportunityOwner(opportunityId, user.id);
-        if (result.ok) {
-          logger.info('Owner atualizado com sucesso');
-          currentOwnerName = user.name;
-
-          // Adicionar seguidor após atualizar owner (com delay para garantir processamento)
-          if (shouldAddDaianeFollower) {
-            logger.info('Aguardando 1.5s antes de adicionar seguidora...');
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            const daianeUser = users.find(u => u.name === DAIANE_BAYER_NAME);
-            if (!daianeUser || !daianeUser.id) {
-              logger.warn('Usuário Daiane Bayer não encontrado para seguidora');
-            } else {
-              // 1. Adicionar seguidor na OPORTUNIDADE
-              logger.info('Adicionando seguidora na oportunidade: ' + opportunityId);
-              const oppFollowerResult = await addOpportunityFollower(opportunityId, daianeUser.id);
-              if (oppFollowerResult.ok) {
-                logger.info('Daiane Bayer adicionada como seguidora da oportunidade!');
-              } else {
-                logger.error('Falha ao adicionar seguidora na oportunidade. Status: ' + oppFollowerResult.status);
-                logger.error('Resposta: ' + JSON.stringify(oppFollowerResult.data));
-              }
-
-              // 2. Adicionar seguidor no CONTATO
-              logger.info('Buscando contactId para oportunidade: ' + opportunityId);
-              const contactId = await getOpportunityContactId(opportunityId);
-              if (!contactId) {
-                logger.warn('Contact ID não encontrado; seguidora não adicionada ao contato');
-              } else {
-                logger.info('Adicionando seguidora ao contato: ' + contactId);
-                const contactFollowerResult = await addContactFollower(contactId, daianeUser.id);
-                if (contactFollowerResult.ok) {
-                  logger.info('Daiane Bayer adicionada como seguidora do contato!');
-                } else {
-                  logger.error('Falha ao adicionar seguidora no contato. Status: ' + contactFollowerResult.status);
-                  logger.error('Resposta: ' + JSON.stringify(contactFollowerResult.data));
-                }
-              }
-            }
-          }
-        } else {
-          logger.error('Falha ao atualizar owner. Status: ' + result.status);
-          logger.error('Resposta: ' + JSON.stringify(result.data));
-        }
-      } catch (err) {
-        logger.error('Erro ao atualizar owner: ' + err.message);
-        console.error(err);
+      if (
+        CONFIG.followerOnOwnerChangeFrom &&
+        previousOwnerName === CONFIG.followerOnOwnerChangeFrom &&
+        selectedUser.name !== CONFIG.followerOnOwnerChangeFrom
+      ) {
+        await applyFollowerRule(opportunityId, users);
       }
-    });
+    } catch (err) {
+      logger.error('Erro ao atualizar owner: ' + err.message);
+    }
+  });
 
-    await dropdownInstance.mountReplacing();
-    logger.info('Dropdown montado com ' + users.length + ' usuários');
-
-  } catch (err) {
-    logger.error('Erro: ' + err.message);
-    console.error(err);
-  }
+  await dropdownInstance.mountReplacing();
+  logger.info(`Dropdown montado com ${users.length} usuários`);
 }
 
-async function runReinject() {
+// ─── Controle de reinjeção ─────────────────────────────────────────────────────
+
+async function runReinject(opportunityId) {
   reinjectInProgress = true;
   try {
-    await startApp();
+    const users = await getUsers();
+    await inject(opportunityId, users);
+  } catch (err) {
+    logger.error('Erro ao reinjetar: ' + err.message);
   } finally {
     reinjectInProgress = false;
     if (reinjectQueued) {
       reinjectQueued = false;
-      checkAndInject();
+      handleRoute();
     }
   }
 }
 
-function scheduleReinject() {
+function scheduleReinject(opportunityId) {
   if (reinjectInProgress) {
     reinjectQueued = true;
     return;
   }
-
-  runReinject();
+  runReinject(opportunityId);
 }
 
-function checkAndInject() {
-  const locationId = getLocationIdFromUrl();
-  if (locationId !== ALLOWED_LOCATION_ID) {
-    return; // Não está na location permitida
-  }
+// ─── Handler de rota ───────────────────────────────────────────────────────────
 
-  const ownerEl = document.querySelector(TARGET_SELECTOR);
-  const hasDropdown = hasInjectedDropdown();
+async function handleRoute() {
+  const routeData = await validateRoute();
 
-  if (ownerEl && !hasDropdown) {
-    // Elemento apareceu, injetar dropdown
-    logger.debug('Elemento #OpportunityOwner detectado, injetando dropdown...');
-    scheduleReinject();
-  } else if (!ownerEl && hasDropdown) {
-    // Elemento sumiu, limpar
-    logger.debug('Elemento #OpportunityOwner removido, limpando dropdown...');
-    cleanupInjectedDropdowns();
-  }
-}
-
-function startDomObserver() {
-  if (domObserver) return; // Já está observando
-
-  const locationId = getLocationIdFromUrl();
-  if (locationId !== ALLOWED_LOCATION_ID) {
-    logger.debug('Location não permitida, não iniciando observer');
+  if (!routeData) {
+    if (hasDropdown()) cleanupDropdowns();
+    lastOpportunityId = null;
     return;
   }
 
-  logger.debug('Iniciando MutationObserver para detectar #OpportunityOwner...');
+  const { opportunityId } = routeData;
 
-  domObserver = new MutationObserver(() => {
-    checkAndInject();
-  });
+  if (opportunityId === lastOpportunityId && hasDropdown()) return;
 
-  domObserver.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-
-  // Verifica imediatamente
-  checkAndInject();
+  lastOpportunityId = opportunityId;
+  scheduleReinject(opportunityId);
 }
 
-// Auto-inicia
+// ─── Auto-inicialização ────────────────────────────────────────────────────────
+
 if (typeof window !== 'undefined') {
-  window.UIInjector = {
-    start: startApp,
-    init: startApp,
-    getDropdown,
+  window.SwitchUser = {
+    start: handleRoute,
+    getDropdown: () => dropdownInstance,
+    setConfig: (cfg) => Object.assign(CONFIG, cfg),
   };
 
-  // Inicia prefetch de usuários IMEDIATAMENTE
+  // Prefetch imediato — usuários carregam enquanto o DOM ainda está renderizando
   startUsersPrefetch();
 
-  // Inicia observer do DOM
-  startDomObserver();
+  // Escuta eventos nativos de navegação SPA do GHL
+  window.addEventListener('routeLoaded', handleRoute);
+  window.addEventListener('routeChangeEvent', handleRoute);
+
+  // Verificação inicial — caso routeLoaded já tenha disparado antes do registro
+  handleRoute();
 }
 
-export { startApp as start, startApp as init, getDropdown };
-
-export default {
-  start: startApp,
-  init: startApp,
-  getDropdown,
-};
+export { handleRoute as start, handleRoute as init };
+export default { start: handleRoute, init: handleRoute };
