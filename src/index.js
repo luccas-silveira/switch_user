@@ -79,8 +79,12 @@ function getOwnerNameFromElement(el) {
 }
 
 function getOpportunityIdFromPath(path) {
-  const match = (path || '').match(/\/opportunities\/list\/([^\/\?]+)/);
-  return match ? match[1] : null;
+  if (!path) return null;
+  const m1 = path.match(/\/opportunities\/list\/([^\/\?]+)/);
+  if (m1) return m1[1];
+  const m2 = path.match(/\/opportunities\/([^\/\?]+)/);
+  if (m2 && m2[1] !== 'list') return m2[1];
+  return null;
 }
 
 // ─── Validação de rota via AppUtils ───────────────────────────────────────────
@@ -225,6 +229,71 @@ function scheduleReinject(opportunityId) {
   runReinject(opportunityId);
 }
 
+// ─── Save interceptor ──────────────────────────────────────────────────────────
+//
+// O GHL reverte a alteração de owner ao clicar em Save/Atualizar. Esse handler
+// captura o clique no botão e re-aplica o owner via API após 1.5s.
+
+let saveInterceptorActive = false;
+
+function startSaveInterceptor() {
+  if (saveInterceptorActive) return;
+  saveInterceptorActive = true;
+
+  document.addEventListener('click', (event) => {
+    const btn = event.target.closest('button, [role="button"]');
+    if (!btn) return;
+
+    const text = btn.textContent?.trim().toLowerCase() || '';
+    const isSaveBtn = text === 'save' || text === 'salvar' ||
+      text === 'update' || text === 'atualizar' ||
+      btn.id?.toLowerCase().includes('save') ||
+      btn.classList.contains('save-btn') ||
+      btn.getAttribute('data-testid')?.includes('save');
+
+    if (!isSaveBtn || !dropdownInstance) return;
+
+    const selectedUser = dropdownInstance.state?.selectedUser;
+    if (!selectedUser || !selectedUser.id) return;
+    if (!lastOpportunityId) return;
+
+    const oppId = lastOpportunityId;
+    setTimeout(async () => {
+      try {
+        const result = await updateOpportunityOwner(oppId, selectedUser.id);
+        if (result.ok) {
+          logger.info('Owner re-aplicado após save: ' + selectedUser.name);
+        }
+      } catch (err) {
+        logger.error('Erro ao re-aplicar owner após save: ' + err.message);
+      }
+    }, 1500);
+  }, true); // capture phase pra pegar antes do GHL
+}
+
+// ─── DOM observer ──────────────────────────────────────────────────────────────
+//
+// Fallback: casos em que #OpportunityOwner aparece/some sem disparar um evento
+// de rota (ex: abrir/fechar painel lateral de oportunidade dentro da mesma URL).
+
+let domObserver = null;
+
+function startDomObserver() {
+  if (domObserver) return;
+  domObserver = new MutationObserver(() => {
+    if (reinjectInProgress) return;
+    const ownerEl = document.querySelector(TARGET_SELECTOR);
+    const injected = hasDropdown();
+    if (ownerEl && !injected) {
+      handleRoute();
+    } else if (!ownerEl && injected) {
+      cleanupDropdowns();
+      lastOpportunityId = null;
+    }
+  });
+  domObserver.observe(document.body, { childList: true, subtree: true });
+}
+
 // ─── Handler de rota ───────────────────────────────────────────────────────────
 
 async function handleRoute() {
@@ -247,6 +316,11 @@ async function handleRoute() {
 // ─── Auto-inicialização ────────────────────────────────────────────────────────
 
 if (typeof window !== 'undefined') {
+  // Shim: código custom do GHL pode chamar manageGhlUiOverrides — evita crash
+  if (typeof window.manageGhlUiOverrides !== 'function') {
+    window.manageGhlUiOverrides = () => {};
+  }
+
   window.SwitchUser = {
     start: handleRoute,
     getDropdown: () => dropdownInstance,
@@ -259,6 +333,10 @@ if (typeof window !== 'undefined') {
   // Escuta eventos nativos de navegação SPA do GHL
   window.addEventListener('routeLoaded', handleRoute);
   window.addEventListener('routeChangeEvent', handleRoute);
+
+  // Fallbacks e interceptadores de UI
+  startDomObserver();
+  startSaveInterceptor();
 
   // Verificação inicial — caso routeLoaded já tenha disparado antes do registro
   handleRoute();
