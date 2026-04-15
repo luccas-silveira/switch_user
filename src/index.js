@@ -7,7 +7,7 @@
 
 import { UserDropdown } from './components/UserDropdown.js';
 import { fetchUsersByLocation } from './services/ghlApi.js';
-import { updateOpportunityOwner, getOpportunityContactId, addOpportunityFollower } from './services/opportunityApi.js';
+import { updateOpportunityOwner, fetchOpportunityById, getOpportunityContactId, addOpportunityFollower } from './services/opportunityApi.js';
 import { addContactFollower } from './services/contactApi.js';
 import { waitForElement } from './utils/dom.js';
 import logger from './utils/logger.js';
@@ -96,12 +96,18 @@ function getOwnerNameFromElement(el) {
 
 let capturedOpportunityId = null;
 let suppressInterceptor = false;
-const OPP_URL_REGEX = /\/opportunities\/(?!list(?:\/|$|\?|#))([a-zA-Z0-9_-]+)(?:\/|$|\?|#)/;
+// Rotas /opportunities/{algo} que NÃO são IDs de oportunidade
+const OPP_RESERVED_SEGMENTS = new Set(['list', 'search', 'bulk', 'import', 'export', 'pipelines']);
 
 function extractOpportunityIdFromUrl(url) {
   if (typeof url !== 'string' || !url) return null;
-  const match = url.match(OPP_URL_REGEX);
-  return match ? match[1] : null;
+  const match = url.match(/\/opportunities\/([a-zA-Z0-9_-]+)(?=\/|$|\?|#)/);
+  if (!match) return null;
+  const segment = match[1];
+  if (OPP_RESERVED_SEGMENTS.has(segment)) return null;
+  // IDs reais do GHL têm 20+ caracteres alfanuméricos — rejeita segmentos curtos/ruído
+  if (segment.length < 15) return null;
+  return segment;
 }
 
 /**
@@ -119,25 +125,80 @@ async function withSuppressedInterceptor(fn) {
   }
 }
 
-/**
- * Re-aplica o owner após um save do GHL. Usado pelo network interceptor
- * e pelo click interceptor. Captura selectedUser antes de qualquer delay
- * para que o valor sobreviva ao cleanup do modal.
- */
-async function reapplyOwnerAfterSave(oppId, selectedUser, sourceLabel = 'save') {
-  if (!oppId || !selectedUser?.id) return;
-  try {
-    await withSuppressedInterceptor(async () => {
-      const result = await updateOpportunityOwner(oppId, selectedUser.id);
-      if (result?.ok) {
-        logger.info(`Owner re-aplicado após ${sourceLabel}: ${selectedUser.name}`);
-      } else {
-        logger.error(`Falha ao re-aplicar owner (${sourceLabel}). Status: ${result?.status}`);
+// ─── Garantia de persistência do owner ────────────────────────────────────────
+//
+// Algum processo server-side do GHL (não identificado — garantidamente não é
+// workflow) reverte o assignedTo ~3s após o update. A estratégia é fazer polling:
+// após o PUT inicial, aguardar, fazer GET para confirmar, re-aplicar se revertido,
+// repetir até N tentativas. Usa um job-id monotônico para cancelar jobs obsoletos
+// quando o usuário muda de opportunity ou seleciona outro owner.
+
+let ownerEnsureJobId = 0;
+const ENSURE_DELAY_MS = 2000;
+const ENSURE_MAX_ATTEMPTS = 6;
+
+async function ensureOwnerSticks(oppId, targetUserId, sourceLabel = 'user:selected') {
+  const myJobId = ++ownerEnsureJobId;
+  if (!oppId || !targetUserId) return;
+
+  for (let attempt = 1; attempt <= ENSURE_MAX_ATTEMPTS; attempt++) {
+    await new Promise(r => setTimeout(r, ENSURE_DELAY_MS));
+
+    // Cancela se um job mais novo assumiu, ou o contexto saiu debaixo dos pés
+    if (myJobId !== ownerEnsureJobId) {
+      logger.debug(`ensureOwnerSticks[${sourceLabel}]: superseded, aborting`);
+      return;
+    }
+    if (oppId !== lastOpportunityId) {
+      logger.debug(`ensureOwnerSticks[${sourceLabel}]: opportunity changed, aborting`);
+      return;
+    }
+    if (dropdownInstance?.state?.selectedUser?.id &&
+        dropdownInstance.state.selectedUser.id !== targetUserId) {
+      logger.debug(`ensureOwnerSticks[${sourceLabel}]: user selected another owner, aborting`);
+      return;
+    }
+
+    try {
+      // GET para saber o estado atual do backend
+      let current;
+      await withSuppressedInterceptor(async () => {
+        current = await fetchOpportunityById(oppId);
+      });
+      if (!current?.ok) {
+        logger.error(`ensureOwnerSticks[${sourceLabel}]: GET falhou status=${current?.status}`);
+        continue;
       }
-    });
-  } catch (err) {
-    logger.error(`Erro ao re-aplicar owner (${sourceLabel}): ${err.message}`);
+      const actual = current.data?.opportunity?.assignedTo
+        ?? current.data?.opportunity?.assigned_to
+        ?? null;
+      if (actual === targetUserId) {
+        logger.info(`Owner confirmado persistente após ${attempt} verificação(ões) [${sourceLabel}]`);
+        return;
+      }
+      logger.warn(`Owner revertido (esperado=${targetUserId}, atual=${actual}). Reaplicando [${sourceLabel}] tentativa ${attempt}/${ENSURE_MAX_ATTEMPTS}`);
+      await withSuppressedInterceptor(async () => {
+        const result = await updateOpportunityOwner(oppId, targetUserId);
+        if (!result.ok) {
+          logger.error(`Reapply PUT falhou. Status: ${result.status}`);
+        }
+      });
+    } catch (err) {
+      logger.error(`ensureOwnerSticks[${sourceLabel}] erro: ${err.message}`);
+    }
   }
+  logger.error(`Owner não persistiu após ${ENSURE_MAX_ATTEMPTS} tentativas [${sourceLabel}]`);
+}
+
+/**
+ * Re-aplica o owner após um save do GHL. Delega para ensureOwnerSticks que
+ * faz o trabalho de polling + retry.
+ */
+function reapplyOwnerAfterSave(oppId, selectedUser, sourceLabel = 'save') {
+  if (!oppId || !selectedUser?.id) return;
+  ensureOwnerSticks(oppId, selectedUser.id, sourceLabel).catch(err =>
+    logger.error(`reapplyOwnerAfterSave erro: ${err.message}`)
+  );
 }
 
 function startNetworkInterceptor() {
@@ -304,6 +365,14 @@ async function inject(opportunityId, users) {
           await applyFollowerRule(opportunityId, users);
         }
       });
+
+      // Fire-and-forget: inicia job de polling que verifica se o owner
+      // persistiu no backend e re-aplica se algo reverter. Não bloqueia o
+      // handler — roda em background e é cancelado automaticamente se o
+      // usuário trocar de owner ou de oportunidade.
+      ensureOwnerSticks(opportunityId, selectedUser.id, 'user:selected').catch(err =>
+        logger.error('ensureOwnerSticks erro: ' + err.message)
+      );
     } catch (err) {
       logger.error('Erro ao atualizar owner: ' + err.message);
     }
