@@ -49,6 +49,7 @@ function getUsers() {
 
 let lastConversationId = null;
 let dropdownInstance = null;
+let isHandlingRoute = false;
 
 // ─── Utilitários ──────────────────────────────────────────────────────────────
 
@@ -145,54 +146,64 @@ async function inject(conversationId, contactId, currentAssignedTo, users) {
 // ─── Handler de rota ──────────────────────────────────────────────────────────
 
 async function handleRoute() {
-  // 1. Valida location
-  const locationId = await getAllowedLocationId();
-  if (!locationId || locationId !== CONFIG.allowedLocationId) {
-    cleanupDropdown();
-    lastConversationId = null;
-    return;
-  }
-
-  // 2. Extrai conversationId da rota atual
-  const conversationId = getConversationId();
-  if (!conversationId) {
-    cleanupDropdown();
-    lastConversationId = null;
-    return;
-  }
-
-  // 3. Evita reinjeção desnecessária
-  if (conversationId === lastConversationId && document.getElementById(WRAPPER_ID)) return;
-  lastConversationId = conversationId;
-
+  if (isHandlingRoute) return;
+  isHandlingRoute = true;
   try {
-    // 4. Busca contactId via conversations API
-    const convResult = await fetchConversationById(conversationId);
-    if (!convResult.ok) {
-      logger.error(`GET /conversations/${conversationId} falhou: ${convResult.status}`);
-      return;
-    }
-    const contactId = convResult.data?.conversation?.contactId
-      || convResult.data?.contactId
-      || null;
-    if (!contactId) {
-      logger.error('contactId não encontrado na resposta da conversa');
+    // 1. Valida location
+    const locationId = await getAllowedLocationId();
+    if (!locationId || locationId !== CONFIG.allowedLocationId) {
+      cleanupDropdown();
+      lastConversationId = null;
       return;
     }
 
-    // 5. Busca owner atual do contato
-    const contactResult = await fetchContactById(contactId);
-    const currentAssignedTo = contactResult.ok
-      ? (contactResult.data?.contact?.assignedTo || contactResult.data?.assignedTo || null)
-      : null;
+    // 2. Extrai conversationId da rota atual
+    const conversationId = getConversationId();
+    if (!conversationId) {
+      cleanupDropdown();
+      lastConversationId = null;
+      return;
+    }
 
-    // 6. Busca usuários (cache ou API)
-    const users = await getUsers();
+    // 3. Evita reinjeção desnecessária
+    if (conversationId === lastConversationId && document.getElementById(WRAPPER_ID)) return;
+    lastConversationId = conversationId;
 
-    // 7. Injeta o dropdown
-    await inject(conversationId, contactId, currentAssignedTo, users);
-  } catch (err) {
-    logger.error('Erro em handleRoute: ' + err.message);
+    try {
+      // 4. Busca contactId via conversations API
+      const convResult = await fetchConversationById(conversationId);
+      if (!convResult.ok) {
+        logger.error(`GET /conversations/${conversationId} falhou: ${convResult.status}`);
+        return;
+      }
+      const contactId = convResult.data?.conversation?.contactId
+        || convResult.data?.contactId
+        || null;
+      if (!contactId) {
+        logger.error('contactId não encontrado na resposta da conversa');
+        return;
+      }
+
+      // 5. Busca owner atual do contato
+      const contactResult = await fetchContactById(contactId);
+      const currentAssignedTo = contactResult.ok
+        ? (contactResult.data?.contact?.assignedTo || contactResult.data?.assignedTo || null)
+        : null;
+
+      // 6. Busca usuários (cache ou API)
+      const users = await getUsers();
+      if (users.length === 0) {
+        logger.warn('Lista de usuários vazia — dropdown não injetado');
+        return;
+      }
+
+      // 7. Injeta o dropdown
+      await inject(conversationId, contactId, currentAssignedTo, users);
+    } catch (err) {
+      logger.error('Erro em handleRoute: ' + err.message);
+    }
+  } finally {
+    isHandlingRoute = false;
   }
 }
 
