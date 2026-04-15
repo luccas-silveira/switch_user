@@ -1,68 +1,28 @@
 /**
- * Serviço HTTP genérico
+ * Configuração central da API GHL
  *
- * Função reutilizável para executar requisições HTTP.
- * Endpoint, headers e token são injetados via configuração.
+ * Única fonte de API_CONFIG e getHeaders para todos os serviços.
  */
 
-/**
- * Configuração da requisição (injetável externamente)
- */
-let requestConfig = {
-  baseUrl: '',
-  endpoint: '',
-  method: 'GET',
-  headers: {},
-  body: null,
+const API_CONFIG = {
+  baseUrl: 'https://services.leadconnectorhq.com',
+  token: 'pit-301590c6-a6cb-47d5-a7f4-bc5c4f5c22d4',
+  version: '2021-07-28',
 };
 
-/**
- * Define a configuração da requisição
- * @param {Object} config - Configuração a ser mesclada
- */
-export function setRequestConfig(config) {
-  requestConfig = { ...requestConfig, ...config };
+export const BASE_URL = API_CONFIG.baseUrl;
+
+export function setApiToken(token) {
+  API_CONFIG.token = token;
 }
 
-/**
- * Obtém a configuração atual
- * @returns {Object}
- */
-export function getRequestConfig() {
-  return { ...requestConfig };
-}
-
-/**
- * Executa a requisição HTTP
- * @param {Object} overrides - Sobrescreve configuração para esta chamada específica
- * @returns {Promise<Object>} Resposta da API
- */
-export async function executeRequest(overrides = {}) {
-  const config = { ...requestConfig, ...overrides };
-
-  const url = config.baseUrl + config.endpoint;
-
-  const options = {
-    method: config.method,
-    headers: config.headers,
-  };
-
-  if (config.body && config.method !== 'GET') {
-    options.body = JSON.stringify(config.body);
-  }
-
-  const response = await fetch(url, options);
-  const data = await response.json();
-
+export function getHeaders() {
   return {
-    ok: response.ok,
-    status: response.status,
-    data,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${API_CONFIG.token}`,
+    'Version': API_CONFIG.version,
   };
 }
 
-export default {
-  setRequestConfig,
-  getRequestConfig,
-  executeRequest,
-};
+export default { setApiToken, getHeaders };
