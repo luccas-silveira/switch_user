@@ -95,6 +95,7 @@ function getOwnerNameFromElement(el) {
 // da oportunidade — a URL delas contém o ID.
 
 let capturedOpportunityId = null;
+let suppressInterceptor = false;
 const OPP_URL_REGEX = /\/opportunities\/(?!list(?:\/|$|\?|#))([a-zA-Z0-9_-]+)(?:\/|$|\?|#)/;
 
 function extractOpportunityIdFromUrl(url) {
@@ -103,23 +104,80 @@ function extractOpportunityIdFromUrl(url) {
   return match ? match[1] : null;
 }
 
+/**
+ * Marca as chamadas feitas dentro do callback como "nossas" para que o
+ * interceptor não as trate como saves do GHL (evita loop).
+ */
+async function withSuppressedInterceptor(fn) {
+  suppressInterceptor = true;
+  try {
+    return await fn();
+  } finally {
+    // Pequeno delay para garantir que a requisição foi enfileirada
+    await new Promise(r => setTimeout(r, 50));
+    suppressInterceptor = false;
+  }
+}
+
+/**
+ * Re-aplica o owner após um save do GHL. Usado pelo network interceptor
+ * e pelo click interceptor. Captura selectedUser antes de qualquer delay
+ * para que o valor sobreviva ao cleanup do modal.
+ */
+async function reapplyOwnerAfterSave(oppId, selectedUser, sourceLabel = 'save') {
+  if (!oppId || !selectedUser?.id) return;
+  try {
+    await withSuppressedInterceptor(async () => {
+      const result = await updateOpportunityOwner(oppId, selectedUser.id);
+      if (result?.ok) {
+        logger.info(`Owner re-aplicado após ${sourceLabel}: ${selectedUser.name}`);
+      } else {
+        logger.error(`Falha ao re-aplicar owner (${sourceLabel}). Status: ${result?.status}`);
+      }
+    });
+  } catch (err) {
+    logger.error(`Erro ao re-aplicar owner (${sourceLabel}): ${err.message}`);
+  }
+}
+
 function startNetworkInterceptor() {
   // fetch
   if (typeof window.fetch === 'function' && !window.fetch.__switchUserPatched) {
     const origFetch = window.fetch.bind(window);
     const patched = function(input, init) {
+      // Chamada "nossa" — bypass total
+      if (suppressInterceptor) return origFetch(input, init);
+
+      let url = '';
+      let method = 'GET';
       try {
-        const url = typeof input === 'string' ? input : (input?.url || '');
-        const id = extractOpportunityIdFromUrl(url);
-        if (id) capturedOpportunityId = id;
+        url = typeof input === 'string' ? input : (input?.url || '');
+        method = (init?.method || (typeof input === 'object' ? input?.method : null) || 'GET').toUpperCase();
       } catch (_) { /* never break the host page */ }
-      return origFetch(input, init);
+
+      const id = extractOpportunityIdFromUrl(url);
+      if (id) capturedOpportunityId = id;
+
+      const responsePromise = origFetch(input, init);
+
+      // Detecta save de oportunidade do GHL (PUT/POST no endpoint)
+      // e reagenda o owner após a resposta voltar.
+      if (id && (method === 'PUT' || method === 'POST') && dropdownInstance?.state?.selectedUser?.id) {
+        const capturedUser = { ...dropdownInstance.state.selectedUser };
+        const capturedOppId = id;
+        responsePromise.then(() => {
+          // Pequeno delay para garantir que o GHL terminou de propagar o save
+          setTimeout(() => reapplyOwnerAfterSave(capturedOppId, capturedUser, 'GHL save (network)'), 400);
+        }).catch(() => {});
+      }
+
+      return responsePromise;
     };
     patched.__switchUserPatched = true;
     window.fetch = patched;
   }
 
-  // XHR
+  // XHR (só captura de ID — GHL tipicamente usa fetch para saves)
   if (XMLHttpRequest?.prototype?.open && !XMLHttpRequest.prototype.open.__switchUserPatched) {
     const origOpen = XMLHttpRequest.prototype.open;
     const patchedOpen = function(method, url, ...rest) {
@@ -229,21 +287,23 @@ async function inject(opportunityId, users) {
     const previousOwnerName = currentOwnerName;
 
     try {
-      const result = await updateOpportunityOwner(opportunityId, selectedUser.id);
-      if (!result.ok) {
-        logger.error('Falha ao atualizar owner. Status: ' + result.status);
-        return;
-      }
-      logger.info('Owner atualizado: ' + selectedUser.name);
-      currentOwnerName = selectedUser.name;
+      await withSuppressedInterceptor(async () => {
+        const result = await updateOpportunityOwner(opportunityId, selectedUser.id);
+        if (!result.ok) {
+          logger.error('Falha ao atualizar owner. Status: ' + result.status);
+          return;
+        }
+        logger.info('Owner atualizado: ' + selectedUser.name);
+        currentOwnerName = selectedUser.name;
 
-      if (
-        CONFIG.followerOnOwnerChangeFrom &&
-        previousOwnerName === CONFIG.followerOnOwnerChangeFrom &&
-        selectedUser.name !== CONFIG.followerOnOwnerChangeFrom
-      ) {
-        await applyFollowerRule(opportunityId, users);
-      }
+        if (
+          CONFIG.followerOnOwnerChangeFrom &&
+          previousOwnerName === CONFIG.followerOnOwnerChangeFrom &&
+          selectedUser.name !== CONFIG.followerOnOwnerChangeFrom
+        ) {
+          await applyFollowerRule(opportunityId, users);
+        }
+      });
     } catch (err) {
       logger.error('Erro ao atualizar owner: ' + err.message);
     }
@@ -294,30 +354,27 @@ function startSaveInterceptor() {
     const btn = event.target.closest('button, [role="button"]');
     if (!btn) return;
 
+    // Detecção permissiva: inclui texto que começa ou contém as variações
     const text = btn.textContent?.trim().toLowerCase() || '';
-    const isSaveBtn = text === 'save' || text === 'salvar' ||
-      text === 'update' || text === 'atualizar' ||
+    const looksLikeSave =
+      /^(save|salvar|update|atualizar)(\s|$|\b)/.test(text) ||
+      text.includes('save changes') ||
+      text.includes('salvar altera') ||
       btn.id?.toLowerCase().includes('save') ||
-      btn.classList.contains('save-btn') ||
-      btn.getAttribute('data-testid')?.includes('save');
+      btn.classList?.toString().toLowerCase().includes('save') ||
+      (btn.getAttribute && btn.getAttribute('data-testid')?.toLowerCase().includes('save'));
 
-    if (!isSaveBtn || !dropdownInstance) return;
+    if (!looksLikeSave || !dropdownInstance) return;
 
     const selectedUser = dropdownInstance.state?.selectedUser;
-    if (!selectedUser || !selectedUser.id) return;
+    if (!selectedUser?.id) return;
     if (!lastOpportunityId) return;
 
+    // Captura oppId e selectedUser via closure — dropdown pode ser desmontado
+    // antes do setTimeout disparar (modal fecha logo após o save).
     const oppId = lastOpportunityId;
-    setTimeout(async () => {
-      try {
-        const result = await updateOpportunityOwner(oppId, selectedUser.id);
-        if (result.ok) {
-          logger.info('Owner re-aplicado após save: ' + selectedUser.name);
-        }
-      } catch (err) {
-        logger.error('Erro ao re-aplicar owner após save: ' + err.message);
-      }
-    }, 1500);
+    const capturedUser = { ...selectedUser };
+    setTimeout(() => reapplyOwnerAfterSave(oppId, capturedUser, 'GHL save (click)'), 1500);
   }, true); // capture phase pra pegar antes do GHL
 }
 
